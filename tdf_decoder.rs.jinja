@@ -1,0 +1,43 @@
+use std::io::{Cursor, Read};
+
+use byteorder::{LittleEndian, ReadBytesExt};
+
+pub fn tdf_name(tdf_id: &u16) -> String
+{
+    match tdf_id {
+{% for tdf_id, info in definitions.items() %}
+        {{ tdf_id }} => String::from("{{ info['name'] }}"),
+{% endfor %}
+        _ => format!("{}", tdf_id),
+    }
+}
+
+pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
+{
+    match tdf_id {
+{% for tdf_id, info in definitions.items() %}
+        {{ tdf_id }} => vec![{{ info['rust_head'] }}],
+{% endfor %}
+        _ => vec!["unknown"],
+    }
+}
+
+pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> std::io::Result<String>
+{
+    match tdf_id {
+{% for tdf_id, info in definitions.items() %}
+        {{ tdf_id }} => 
+            Ok(format!(
+                "{{ info['rust_fmt'] }}",
+{% for conv in info['rust_convs'] %}
+                cursor.{{ conv[1] }},
+{% endfor %}
+            )),
+{% endfor %}
+        _ => {
+            let mut buf = vec![0; size as usize];
+            cursor.read_exact(&mut buf)?;
+            Ok(format!("{}", hex::encode(buf)))
+        }
+    }
+}
