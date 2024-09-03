@@ -8,6 +8,7 @@ use std::io::{self, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time;
 
 use tdf::TdfOutput;
 
@@ -75,7 +76,7 @@ impl TdfOutput for TdfCsvWriter {
 
                 // Write header into file
                 let heading = tdf::decoders::tdf_fields(&tdf_id).join(",");
-                writer.write_all(format!("time,{}", heading).as_bytes())?;
+                writer.write_all(format!("time,{}\n", heading).as_bytes())?;
 
                 // Insert into hashmap and return
                 v.insert((path, writer))
@@ -188,6 +189,8 @@ pub fn worker_run_decode<T: ProgressReporter>(mut args: DecodeWorkerArgsReporter
         // Report every 10 blocks finished
         if index % 10 == 9 {
             args.reporter.increment(10);
+            // Mini sleep to give control thread time to update
+            thread::sleep(time::Duration::from_millis(1));
         }
     }
 
@@ -335,6 +338,8 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
             write_headings = false;
 
             args.merge_reporter.increment(1);
+            // Mini sleep to give control thread time to update
+            thread::sleep(time::Duration::from_millis(1));
         }
         output.flush()?;
     }

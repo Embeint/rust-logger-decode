@@ -12,6 +12,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 
 rust_type = {
+    'char': ('u8', False),
     'int8_t': ('i8', False),
     'uint8_t': ('u8', False),
     'int16_t': ('i16', True),
@@ -35,7 +36,7 @@ def decoders_gen(tdf_defs, output):
 
     def field_conv_func(field, name_prefix=None):
         t = rust_type[field['type']]
-        func = f"read_{t[0]}"
+        func = f"cursor.read_{t[0]}"
         if t[1]:
             func += "::<LittleEndian>"
         func += "()?"
@@ -59,7 +60,10 @@ def decoders_gen(tdf_defs, output):
             n = f"{name_prefix}." + n
 
         if 'num' in field:
-            return [(n + f'[{idx}]', func) for idx in range(field['num'])]
+            if field['type'] == 'char':
+                return [(n, f"tdf_field_read_string(cursor, {field['num']})?")]
+            else:
+                return [(n + f'[{idx}]', func) for idx in range(field['num'])]
         else:
             return [(n, func)]
 

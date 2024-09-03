@@ -299,91 +299,123 @@ fn copyright_bar(_ctx: &egui::Context, ui: &mut egui::Ui) {
         });
 }
 
+fn draw_right_edge(ui: &mut egui::Ui, width: f32, color: egui::Color32) {
+    let available_rect = ui.available_rect_before_wrap();
+    let painter = ui.painter();
+    let right_edge = [
+        egui::Pos2::new(available_rect.right() + 5.0, available_rect.top()),
+        egui::Pos2::new(available_rect.right() + 5.0, available_rect.bottom()),
+    ];
+
+    painter.line_segment(right_edge, egui::Stroke::new(width, color));
+}
+
 fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
-    egui::SidePanel::left("TDF Stats")
-        .resizable(false)
-        .show(ctx, |ui| {
-            TableBuilder::new(ui)
-                .striped(true)
-                .column(Column::remainder())
-                .column(Column::remainder())
-                .header(5.0, |mut header| {
-                    header.col(|ui| {
-                        ui.heading("TDF");
-                    });
-                    header.col(|ui| {
-                        ui.heading("Count");
-                    });
-                })
-                .body(|mut body| {
-                    if let Some(tdf) = app.tdf_stats.as_ref() {
-                        for (id, count) in tdf.iter() {
-                            body.row(5.0, |mut row| {
-                                row.col(|ui| {
-                                    ui.label(tdf::decoders::tdf_name(id));
-                                });
-                                row.col(|ui| {
-                                    ui.label(format!("{count}"));
-                                });
-                            });
-                        }
-                    }
-                });
-        });
-
-    egui::SidePanel::left("Block Stats")
-        .resizable(false)
-        .show(ctx, |ui| {
-            TableBuilder::new(ui)
-                .striped(true)
-                .column(Column::remainder())
-                .column(Column::remainder())
-                .header(5.0, |mut header| {
-                    header.col(|ui| {
-                        ui.heading("Block Type");
-                    });
-                    header.col(|ui| {
-                        ui.heading("Count");
-                    });
-                })
-                .body(|mut body| {
-                    if let Some(block) = app.block_stats.as_ref() {
-                        for (block, count) in block.iter() {
-                            body.row(5.0, |mut row| {
-                                row.col(|ui| {
-                                    ui.label(format!("{block}"));
-                                });
-                                row.col(|ui| {
-                                    ui.label(format!("{count}"));
-                                });
-                            });
-                        }
-                    }
-                });
-        });
-
     egui::CentralPanel::default().show(ctx, |ui| {
-        TableBuilder::new(ui)
-            .striped(true)
-            .column(Column::remainder())
-            .header(5.0, |mut header| {
-                header.col(|ui| {
-                    ui.heading("Output Files");
-                });
-            })
-            .body(|mut body| {
-                if let Some(files) = app.output_files.as_ref() {
-                    for file in files.iter() {
-                        body.row(5.0, |mut row| {
-                            row.col(|ui| {
-                                let name =
-                                    format!("{}", file.file_name().unwrap().to_str().unwrap());
-                                ui.label(egui::RichText::new(name));
-                            });
+        ui.columns(3, |columns| {
+            columns[0].push_id(0, |ui| {
+                draw_right_edge(ui, 1.0, egui::Color32::GRAY);
+
+                TableBuilder::new(ui)
+                    .striped(true)
+                    .column(Column::remainder())
+                    .column(Column::auto())
+                    .header(5.0, |mut header| {
+                        header.col(|ui| {
+                            ui.heading("Block Type");
                         });
-                    }
-                }
+                        header.col(|ui| {
+                            ui.heading("    Count");
+                        });
+                    })
+                    .body(|mut body| {
+                        if let Some(block) = app.block_stats.as_ref() {
+                            for (block, count) in block.iter() {
+                                body.row(5.0, |mut row| {
+                                    row.col(|ui| {
+                                        ui.label(format!("{block}"));
+                                    });
+                                    row.col(|ui| {
+                                        ui.with_layout(
+                                            egui::Layout::top_down_justified(egui::Align::RIGHT),
+                                            |ui| {
+                                                ui.label(format!("{count}"));
+                                            },
+                                        );
+                                    });
+                                });
+                            }
+                        }
+                    });
             });
+
+            columns[1].push_id(1, |ui| {
+                draw_right_edge(ui, 1.0, egui::Color32::GRAY);
+
+                TableBuilder::new(ui)
+                    .column(Column::remainder())
+                    .column(Column::auto())
+                    .header(5.0, |mut header| {
+                        header.col(|ui| {
+                            ui.heading("TDF");
+                        });
+                        header.col(|ui| {
+                            ui.heading("    Count");
+                        });
+                    })
+                    .body(|mut body| {
+                        if let Some(tdf) = app.tdf_stats.as_ref() {
+                            for (id, count) in tdf.iter() {
+                                body.row(5.0, |mut row| {
+                                    row.col(|ui| {
+                                        ui.add(
+                                            egui::Label::new(tdf::decoders::tdf_name(id))
+                                                .wrap_mode(egui::TextWrapMode::Truncate),
+                                        );
+                                    });
+                                    row.col(|ui| {
+                                        ui.with_layout(
+                                            egui::Layout::top_down_justified(egui::Align::RIGHT),
+                                            |ui| {
+                                                ui.label(format!("{count}"));
+                                            },
+                                        );
+                                    });
+                                });
+                            }
+                        }
+                    });
+            });
+
+            columns[2].push_id(2, |ui| {
+                TableBuilder::new(ui)
+                    .striped(true)
+                    .column(Column::remainder())
+                    .header(5.0, |mut header| {
+                        header.col(|ui| {
+                            ui.heading("Output Files");
+                        });
+                    })
+                    .body(|mut body| {
+                        if let Some(files) = app.output_files.as_ref() {
+                            for file in files.iter() {
+                                body.row(5.0, |mut row| {
+                                    row.col(|ui| {
+                                        let name = format!(
+                                            "{}",
+                                            file.file_name().unwrap().to_str().unwrap()
+                                        );
+                                        ui.add(
+                                            egui::Label::new(name)
+                                                .wrap_mode(egui::TextWrapMode::Truncate),
+                                        );
+                                    });
+                                });
+                            }
+                        }
+                    });
+            });
+        });
     });
 }
 

@@ -22,6 +22,17 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
     }
 }
 
+fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, size: u8) ->  std::io::Result<String>
+{
+    let mut buf = vec![0u8; size as usize];
+    cursor.read_exact(&mut buf)?;
+
+    match String::from_utf8(buf) {
+        Ok(val) => Ok(format!("\"{}\"", val.trim_matches(char::from(0)))),
+        Err(..) => Ok(String::from("\"\""))
+    }
+}
+
 pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> std::io::Result<String>
 {
     match tdf_id {
@@ -30,7 +41,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             Ok(format!(
                 "{{ info['rust_fmt'] }}",
 {% for conv in info['rust_convs'] %}
-                cursor.{{ conv[1] }},
+                {{ conv[1] }},
 {% endfor %}
             )),
 {% endfor %}
