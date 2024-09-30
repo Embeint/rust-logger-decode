@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "cli"
+name = "infuse_decoder_cli"
 path = "src/main_cli.rs"
 
 [[bin]]
-name = "gui"
+name = "infuse_decoder"
 path = "src/main_gui.rs"
 
 [dependencies]
