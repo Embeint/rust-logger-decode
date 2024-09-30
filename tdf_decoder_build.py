@@ -67,26 +67,43 @@ def decoders_gen(tdf_defs, output):
         else:
             return [(n, func)]
 
+    def field_fmt(field):
+        if field['type'] == 'char':
+            return ["{}"]
+        if field.get('display_fmt', "") == "hex":
+            single = ["0x{:x}"]
+        else:
+            single = ["{}"]
+        return single * field.get('num', 1)
+
+
     structs = {}
+    struct_fmts = {}
     for name, struct in tdf_defs['structs'].items():
         funcs = []
+        fmts = []
         for f in struct['fields']:
             funcs += field_conv_func(f)
+            fmts += field_fmt(f)
         structs[f"struct {name}"] = funcs
+        struct_fmts[f"struct {name}"] = fmts
 
     # Generate rust conversion functions
     for tdf_id, info in tdf_defs['definitions'].items():
         info['rust_convs'] = []
+        fmt = []
         for f in info['fields']:
             if f['type'] in structs:
                 info['rust_convs'] += structs[f['type']]
+                fmt += struct_fmts[f['type']]
             elif f['type'] in rust_type:
                 info['rust_convs'] += field_conv_func(f)
+                fmt += field_fmt(f)
             else:
                 raise RuntimeError(f"Bad type {info['type']}")
 
         info['rust_head'] = ",".join([f"\"{c[0]}\"" for c in info['rust_convs']])
-        info['rust_fmt'] = ",".join(["{}"] * len(info['rust_convs']))
+        info['rust_fmt'] = ",".join(fmt)
 
 
     tdf_output = pathlib.Path(output) / 'decoders.rs'
