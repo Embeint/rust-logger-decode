@@ -70,7 +70,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
     match tdf_id {
         1 => 
             Ok(format!(
-                "{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},0x{:x},0x{:x},{},{},{},0x{:x}",
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u8()?,
                 cursor.read_u8()?,
@@ -109,7 +109,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             )),
         6 => 
             Ok(format!(
-                "{},{},{},{},{},{},{}",
+                "{},0x{:x},{},{},0x{:x},0x{:x},{}",
                 cursor.read_u8()?,
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u32::<LittleEndian>()?,
@@ -192,7 +192,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             )),
         20 => 
             Ok(format!(
-                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},0x{:x},{},{},{},0x{:x},0x{:x},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},0x{:x},{},{},{},{},{},{},{}",
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u16::<LittleEndian>()?,
                 cursor.read_u8()?,
