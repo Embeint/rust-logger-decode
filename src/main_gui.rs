@@ -440,6 +440,8 @@ impl eframe::App for MyApp {
                     _ => {}
                 }
             }
+            // Decoding is running, request periodic repaints
+            ctx.request_repaint_after(core::time::Duration::from_millis(100));
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
