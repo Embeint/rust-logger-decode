@@ -290,7 +290,7 @@ fn copyright_bar(_ctx: &egui::Context, ui: &mut egui::Ui) {
         .num_columns(2)
         .show(ui, |ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::LEFT), |ui| {
-                ui.label("© Embeint Inc 2024");
+                ui.label(concat!("v", env!("CARGO_PKG_VERSION"), " © Embeint Inc 2024"));
             });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {

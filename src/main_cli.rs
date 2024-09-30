@@ -42,6 +42,7 @@ impl infuse_decoder::ProgressReporter for IndicatifProgress {
 
 /// Decode Infuse-IoT binary files to CSV
 #[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
 struct Cli {
     /// The path to the folder containing Infuse-IoT binary files
     #[arg(short, long, required = true)]
@@ -55,6 +56,7 @@ struct Cli {
     /// Write Unix timestamps instead of UTC strings
     #[arg(short, long)]
     unix: bool,
+    /// Verbose CLI output
     #[arg(short, long)]
     verbose: bool,
 }
