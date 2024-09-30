@@ -85,7 +85,7 @@ def decoders_gen(tdf_defs, output):
             else:
                 raise RuntimeError(f"Bad type {info['type']}")
 
-        info['rust_head'] = "\"time\"," + ",".join([f"\"{c[0]}\"" for c in info['rust_convs']])
+        info['rust_head'] = ",".join([f"\"{c[0]}\"" for c in info['rust_convs']])
         info['rust_fmt'] = ",".join(["{}"] * len(info['rust_convs']))
 
 
