@@ -8,7 +8,6 @@ use std::io::{self, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time;
 
 use tdf::TdfOutput;
 
@@ -189,8 +188,6 @@ pub fn worker_run_decode<T: ProgressReporter>(mut args: DecodeWorkerArgsReporter
         // Report every 10 blocks finished
         if index % 10 == 9 {
             args.reporter.increment(10);
-            // Mini sleep to give control thread time to update
-            thread::sleep(time::Duration::from_millis(1));
         }
     }
 
@@ -338,8 +335,6 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
             write_headings = false;
 
             args.merge_reporter.increment(1);
-            // Mini sleep to give control thread time to update
-            thread::sleep(time::Duration::from_millis(1));
         }
         output.flush()?;
     }
