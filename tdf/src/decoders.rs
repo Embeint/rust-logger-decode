@@ -23,6 +23,13 @@ pub fn tdf_name(tdf_id: &u16) -> String
         19 => String::from("GCS_WGS84_LLHA"),
         20 => String::from("UBX_NAV_PVT"),
         21 => String::from("LTE_CONN_STATUS"),
+        22 => String::from("GLOBALSTAR_PKT"),
+        23 => String::from("ACC_MAGNITUDE_STD_DEV"),
+        24 => String::from("ACTIVITY_METRIC"),
+        25 => String::from("ALGORITHM_OUTPUT"),
+        26 => String::from("RUNTIME_ERROR"),
+        27 => String::from("CHARGER_EN_CONTROL"),
+        28 => String::from("GNSS_FIX_INFO"),
         100 => String::from("ARRAY_TYPE"),
         _ => format!("{}", tdf_id),
     }
@@ -49,6 +56,13 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         19 => vec!["latitude","longitude","height","h_acc","v_acc"],
         20 => vec!["itow","year","month","day","hour","min","sec","valid","t_acc","nano","fix_type","flags","flags2","num_sv","lon","lat","height","h_msl","h_acc","v_acc","vel_n","vel_e","vel_d","g_speed","head_mot","s_acc","head_acc","p_dop","flags3","reserved0[0]","reserved0[1]","reserved0[2]","reserved0[3]","head_veh","mag_dec","mag_acc"],
         21 => vec!["mcc","mnc","eci","tac","earfcn","status","tech","rsrp","rsrq"],
+        22 => vec!["payload[0]","payload[1]","payload[2]","payload[3]","payload[4]","payload[5]","payload[6]","payload[7]","payload[8]"],
+        23 => vec!["count","std_dev"],
+        24 => vec!["value"],
+        25 => vec!["algorithm_id","algorithm_version"],
+        26 => vec!["error_id","error_ctx"],
+        27 => vec!["enabled"],
+        28 => vec!["time_fix","location_fix","num_sv"],
         100 => vec!["array[0]","array[1]","array[2]","array[3]"],
         _ => vec!["unknown"],
     }
@@ -70,7 +84,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
     match tdf_id {
         1 => 
             Ok(format!(
-                "{},{},{},{},0x{:x},0x{:x},{},{},{},0x{:x}",
+                "0x{:x},{},{},{},0x{:x},0x{:x},{},{},{},0x{:x}",
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u8()?,
                 cursor.read_u8()?,
@@ -242,6 +256,54 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u8()?,
                 cursor.read_u8()? as f64 / -1.0,
                 cursor.read_i8()?,
+            )),
+        22 => 
+            Ok(format!(
+                "{},{},{},{},{},{},{},{},{}",
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+            )),
+        23 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+            )),
+        24 => 
+            Ok(format!(
+                "{}",
+                cursor.read_u32::<LittleEndian>()?,
+            )),
+        25 => 
+            Ok(format!(
+                "0x{:x},{}",
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+            )),
+        26 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+            )),
+        27 => 
+            Ok(format!(
+                "{}",
+                cursor.read_u8()?,
+            )),
+        28 => 
+            Ok(format!(
+                "{},{},{}",
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u8()?,
             )),
         100 => 
             Ok(format!(
