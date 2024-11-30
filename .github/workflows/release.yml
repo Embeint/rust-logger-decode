@@ -42,7 +42,7 @@ jobs:
           # Note that glob pattern is not supported yet.
           bin: infuse_decoder,infuse_decoder_cli
           # (optional) Archive name (non-extension portion of filename) to be uploaded.
-          archive: $bin-$tag-$target
+          archive: infuse_decoder-$tag-$target
           # (optional) Target triple, default is host triple.
           target: ${{ matrix.target }}
           # (required) GitHub token for uploading assets to GitHub Releases.
