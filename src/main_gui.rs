@@ -188,9 +188,13 @@ fn core_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
                     if let Some(file) = FileDialog::new().pick_file() {
                         let mut h = HashMap::new();
                         h.insert(0, vec![file.clone()]);
+                        let prefix = match file.file_stem() {
+                            Some(name) => name.to_str().unwrap_or("0"),
+                            None => "0",
+                        };
 
                         app.device_id = 0;
-                        app.output_prefix = format!("{}", 0);
+                        app.output_prefix = prefix.to_string();
                         app.input_path = Some(file);
                         app.input_files = Some(h);
                     }
