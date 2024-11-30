@@ -329,14 +329,16 @@ fn draw_tdf_table(ui: &mut egui::Ui, id: Option<u64>, tdfs: &HashMap<u16, usize>
         ui.heading(format!("{:016x}", id_val));
     }
     TableBuilder::new(ui)
-        .column(Column::remainder())
+        .column(Column::auto())
         .column(Column::auto())
         .header(5.0, |mut header| {
             header.col(|ui| {
                 ui.heading("TDF");
             });
             header.col(|ui| {
-                ui.heading("    Count");
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::RIGHT), |ui| {
+                    ui.heading("Count");
+                });
             });
         })
         .body(|mut body| {
@@ -369,14 +371,19 @@ fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
 
                 TableBuilder::new(ui)
                     .striped(true)
-                    .column(Column::remainder())
+                    .column(Column::auto())
                     .column(Column::auto())
                     .header(5.0, |mut header| {
                         header.col(|ui| {
                             ui.heading("Block Type");
                         });
                         header.col(|ui| {
-                            ui.heading("    Count");
+                            ui.with_layout(
+                                egui::Layout::top_down_justified(egui::Align::RIGHT),
+                                |ui| {
+                                    ui.heading("Count");
+                                },
+                            );
                         });
                     })
                     .body(|mut body| {
