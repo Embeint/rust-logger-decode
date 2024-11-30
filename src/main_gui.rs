@@ -453,9 +453,11 @@ impl eframe::App for MyApp {
                 let res = self.runner_thread.take().unwrap().join().unwrap();
                 match res {
                     Ok((block_stats, tdf_stats, output_files)) => {
+                        let mut files = output_files.clone();
+                        files.sort();
                         self.block_stats = Some(hashmap_sort(block_stats));
                         self.tdf_stats = Some(tdf_stats);
-                        self.output_files = Some(output_files);
+                        self.output_files = Some(files);
                     }
                     _ => {}
                 }
