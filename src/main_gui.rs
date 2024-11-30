@@ -85,14 +85,14 @@ struct MyApp {
     progress_decode: SliderState,
     progress_merge: SliderState,
     block_stats: Option<Vec<(blocks::BlockTypes, usize)>>,
-    tdf_stats: Option<Vec<(u16, usize)>>,
+    tdf_stats: Option<HashMap<Option<u64>, HashMap<u16, usize>>>,
     output_files: Option<Vec<PathBuf>>,
     runner_thread: Option<
         std::thread::JoinHandle<
             Result<
                 (
                     HashMap<blocks::BlockTypes, usize>,
-                    HashMap<u16, usize>,
+                    HashMap<Option<u64>, HashMap<u16, usize>>,
                     Vec<PathBuf>,
                 ),
                 std::io::Error,
@@ -290,13 +290,23 @@ fn copyright_bar(_ctx: &egui::Context, ui: &mut egui::Ui) {
         .num_columns(2)
         .show(ui, |ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::LEFT), |ui| {
-                ui.label(concat!("v", env!("CARGO_PKG_VERSION"), " © Embeint Inc 2024"));
+                ui.label(concat!(
+                    "v",
+                    env!("CARGO_PKG_VERSION"),
+                    " © Embeint Inc 2024"
+                ));
             });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {
                 egui::widgets::global_dark_light_mode_buttons(ui);
             });
         });
+}
+
+fn hashmap_sort<T>(hashmap: HashMap<T, usize>) -> Vec<(T, usize)> {
+    let mut sorted: Vec<(T, usize)> = hashmap.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted
 }
 
 fn draw_right_edge(ui: &mut egui::Ui, width: f32, color: egui::Color32) {
@@ -308,6 +318,43 @@ fn draw_right_edge(ui: &mut egui::Ui, width: f32, color: egui::Color32) {
     ];
 
     painter.line_segment(right_edge, egui::Stroke::new(width, color));
+}
+
+fn draw_tdf_table(ui: &mut egui::Ui, id: Option<u64>, tdfs: &HashMap<u16, usize>) {
+    if let Some(id_val) = id {
+        ui.heading(format!("{:016x}", id_val));
+    }
+    TableBuilder::new(ui)
+        .column(Column::remainder())
+        .column(Column::auto())
+        .header(5.0, |mut header| {
+            header.col(|ui| {
+                ui.heading("TDF");
+            });
+            header.col(|ui| {
+                ui.heading("    Count");
+            });
+        })
+        .body(|mut body| {
+            for (id, count) in hashmap_sort(tdfs.clone()).iter() {
+                body.row(5.0, |mut row| {
+                    row.col(|ui| {
+                        ui.add(
+                            egui::Label::new(tdf::decoders::tdf_name(id))
+                                .wrap_mode(egui::TextWrapMode::Truncate),
+                        );
+                    });
+                    row.col(|ui| {
+                        ui.with_layout(
+                            egui::Layout::top_down_justified(egui::Align::RIGHT),
+                            |ui| {
+                                ui.label(format!("{count}"));
+                            },
+                        );
+                    });
+                });
+            }
+        });
 }
 
 fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
@@ -352,39 +399,18 @@ fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
             columns[1].push_id(1, |ui| {
                 draw_right_edge(ui, 1.0, egui::Color32::GRAY);
 
-                TableBuilder::new(ui)
-                    .column(Column::remainder())
-                    .column(Column::auto())
-                    .header(5.0, |mut header| {
-                        header.col(|ui| {
-                            ui.heading("TDF");
-                        });
-                        header.col(|ui| {
-                            ui.heading("    Count");
-                        });
-                    })
-                    .body(|mut body| {
-                        if let Some(tdf) = app.tdf_stats.as_ref() {
-                            for (id, count) in tdf.iter() {
-                                body.row(5.0, |mut row| {
-                                    row.col(|ui| {
-                                        ui.add(
-                                            egui::Label::new(tdf::decoders::tdf_name(id))
-                                                .wrap_mode(egui::TextWrapMode::Truncate),
-                                        );
-                                    });
-                                    row.col(|ui| {
-                                        ui.with_layout(
-                                            egui::Layout::top_down_justified(egui::Align::RIGHT),
-                                            |ui| {
-                                                ui.label(format!("{count}"));
-                                            },
-                                        );
-                                    });
-                                });
-                            }
+                if let Some(tdf_per_id) = app.tdf_stats.as_ref() {
+                    // Show the loval TDFs first
+                    if let Some(tdfs) = tdf_per_id.get(&None) {
+                        draw_tdf_table(ui, None, tdfs);
+                    }
+                    for (id, tdfs) in tdf_per_id.iter() {
+                        if id.is_some() {
+                            ui.separator();
+                            draw_tdf_table(ui, *id, tdfs);
                         }
-                    });
+                    }
+                }
             });
 
             columns[2].push_id(2, |ui| {
@@ -419,12 +445,6 @@ fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
     });
 }
 
-fn hashmap_sort<T>(hashmap: HashMap<T, usize>) -> Vec<(T, usize)> {
-    let mut sorted: Vec<(T, usize)> = hashmap.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
-    sorted
-}
-
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Check if executing work has completed
@@ -434,7 +454,7 @@ impl eframe::App for MyApp {
                 match res {
                     Ok((block_stats, tdf_stats, output_files)) => {
                         self.block_stats = Some(hashmap_sort(block_stats));
-                        self.tdf_stats = Some(hashmap_sort(tdf_stats));
+                        self.tdf_stats = Some(tdf_stats);
                         self.output_files = Some(output_files);
                     }
                     _ => {}

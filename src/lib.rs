@@ -28,8 +28,9 @@ pub struct TdfCsvWriter {
     decoder_idx: usize,
     output_folder: std::path::PathBuf,
     output_unix: bool,
-    pub outputs: HashMap<u16, (std::path::PathBuf, std::io::BufWriter<std::fs::File>)>,
-    output_cnt: HashMap<u16, usize>,
+    pub outputs:
+        HashMap<(Option<u64>, u16), (std::path::PathBuf, std::io::BufWriter<std::fs::File>)>,
+    output_cnt: HashMap<(Option<u64>, u16), usize>,
 }
 impl TdfCsvWriter {
     pub fn new(
@@ -46,9 +47,9 @@ impl TdfCsvWriter {
         }
     }
 
-    pub fn output_path(self: &Self, tdf_id: u16) -> Option<PathBuf> {
+    pub fn output_path(self: &Self, remote_id: Option<u64>, tdf_id: u16) -> Option<PathBuf> {
         self.outputs
-            .get(&tdf_id)
+            .get(&(remote_id, tdf_id))
             .map(|(pathbuf, _)| pathbuf.clone())
     }
 }
@@ -56,17 +57,23 @@ impl TdfCsvWriter {
 impl TdfOutput for TdfCsvWriter {
     fn write(
         &mut self,
+        remote_id: Option<u64>,
         tdf_id: u16,
         tdf_time: i64,
         size: u8,
         cursor: &mut Cursor<&[u8]>,
     ) -> std::io::Result<()> {
         // Create writer if it doesn't exist
-        let (_, writer) = match self.outputs.entry(tdf_id) {
+        let (_, writer) = match self.outputs.entry((remote_id, tdf_id)) {
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(v) => {
+                let id_prefix = match remote_id {
+                    Some(id) => format!("_{:016x}", id),
+                    None => "".to_string(),
+                };
                 let fname = format!(
-                    "_{}_{:05}.csv",
+                    "{}_{}_{:05}.csv",
+                    id_prefix,
                     tdf::decoders::tdf_name(&tdf_id),
                     self.decoder_idx
                 );
@@ -101,16 +108,19 @@ impl TdfOutput for TdfCsvWriter {
         writer.write_all(line.as_bytes())?;
 
         // Increment output counter
-        *self.output_cnt.entry(tdf_id.to_owned()).or_default() += 1;
+        *self
+            .output_cnt
+            .entry((remote_id, tdf_id.to_owned()))
+            .or_default() += 1;
         Ok(())
     }
 
-    fn iter_written(&self) -> impl Iterator<Item = (&u16, &usize)> {
+    fn iter_written(&self) -> impl Iterator<Item = (&(Option<u64>, u16), &usize)> {
         self.output_cnt.iter()
     }
 
-    fn written(&self, tdf_id: u16) -> usize {
-        match self.output_cnt.get(&tdf_id) {
+    fn written(&self, remote_id: Option<u64>, tdf_id: u16) -> usize {
+        match self.output_cnt.get(&(remote_id, tdf_id)) {
             Some(val) => *val,
             None => 0,
         }
@@ -156,7 +166,7 @@ pub struct TdfDecoderOutputs {
 pub struct DecodeWorkerArgsReporter<T: ProgressReporter> {
     pub decode_args: DecodeWorkerArgs,
     pub block_stats: Arc<Mutex<HashMap<blocks::BlockTypes, usize>>>,
-    pub tdf_stats: Arc<Mutex<HashMap<u16, HashMap<usize, TdfDecoderOutputs>>>>,
+    pub tdf_stats: Arc<Mutex<HashMap<(Option<u64>, u16), HashMap<usize, TdfDecoderOutputs>>>>,
     pub reporter: T,
 }
 
@@ -194,9 +204,11 @@ pub fn worker_run_decode<T: ProgressReporter>(mut args: DecodeWorkerArgsReporter
     // Push TDF stats into the output hashmap
     let mut tdf_stats = args.tdf_stats.lock().unwrap();
 
-    for (tdf_id, tdf_cnt) in csv_writer.iter_written() {
-        let res = tdf_stats.entry(*tdf_id).or_insert_with(|| HashMap::new());
-        let path = csv_writer.output_path(*tdf_id).unwrap();
+    for ((remote_id, tdf_id), tdf_cnt) in csv_writer.iter_written() {
+        let res = tdf_stats
+            .entry((*remote_id, *tdf_id))
+            .or_insert_with(|| HashMap::new());
+        let path = csv_writer.output_path(*remote_id, *tdf_id).unwrap();
 
         res.insert(
             args.decode_args.decoder_idx,
@@ -230,7 +242,7 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
     args: &mut RunArgs<T>,
 ) -> io::Result<(
     HashMap<blocks::BlockTypes, usize>,
-    HashMap<u16, usize>,
+    HashMap<Option<u64>, HashMap<u16, usize>>,
     Vec<PathBuf>,
 )> {
     let stats_block = Arc::new(Mutex::new(HashMap::new()));
@@ -308,10 +320,15 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
 
     args.merge_reporter.start("Merging output files", num_files);
 
-    for (tdf_id, worker_outputs) in results.iter() {
+    for ((remote_id, tdf_id), worker_outputs) in results.iter() {
+        let id_prefix = match remote_id {
+            Some(id) => format!("_{:016x}", id),
+            None => "".to_string(),
+        };
         let output_path = args.output_folder.join(format!(
-            "{}_{}.csv",
+            "{}{}_{}.csv",
             args.output_prefix,
+            id_prefix,
             tdf::decoders::tdf_name(tdf_id)
         ));
         output_files.push(output_path.clone());
@@ -343,12 +360,14 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
     let block = stats_block.lock().unwrap().clone();
     let mut tdf = HashMap::new();
 
-    for (tdf_id, worker_outputs) in results.iter() {
+    for ((remote_id, tdf_id), worker_outputs) in results.iter() {
+        let values = tdf.entry(*remote_id).or_insert_with(|| HashMap::new());
+
         let mut sum = 0;
         for (_, output) in worker_outputs.iter() {
             sum += output.num_output;
         }
-        tdf.insert(*tdf_id, sum);
+        values.insert(*tdf_id, sum);
     }
 
     Ok((block, tdf, output_files))

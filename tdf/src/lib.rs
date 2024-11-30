@@ -8,19 +8,24 @@ pub trait TdfOutput {
     /// Write a TDF to an abstract output
     fn write(
         &mut self,
+        remote_id: Option<u64>,
         tdf_id: u16,
         tdf_time: i64,
         size: u8,
         cursor: &mut Cursor<&[u8]>,
     ) -> std::io::Result<()>;
     /// Iterate over all TDFs written
-    fn iter_written(&self) -> impl Iterator<Item = (&u16, &usize)>;
+    fn iter_written(&self) -> impl Iterator<Item = (&(Option<u64>, u16), &usize)>;
     /// Get the number of times a specific TDF was written
-    fn written(&self, tdf_id: u16) -> usize;
+    fn written(&self, remote_id: Option<u64>, tdf_id: u16) -> usize;
 }
 
 /// Decode a single TDF block, writing to an abstract output
-pub fn block_decode<T: TdfOutput>(block: &[u8], output: &mut T) -> std::io::Result<()> {
+pub fn block_decode<T: TdfOutput>(
+    remote_id: Option<u64>,
+    block: &[u8],
+    output: &mut T,
+) -> std::io::Result<()> {
     let mut cursor = Cursor::new(block);
     let mut buffer_time: i64 = 0;
 
@@ -52,7 +57,7 @@ pub fn block_decode<T: TdfOutput>(block: &[u8], output: &mut T) -> std::io::Resu
 
         let mut sample_time = buffer_time;
         for _ in 0..array_num {
-            output.write(tdf_id, sample_time, size, &mut cursor)?;
+            output.write(remote_id, tdf_id, sample_time, size, &mut cursor)?;
             sample_time += array_time_period;
         }
     }

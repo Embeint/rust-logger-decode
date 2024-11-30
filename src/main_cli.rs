@@ -113,14 +113,21 @@ fn main() -> io::Result<()> {
         let (block_stats, tdf_stats, _output_files) = infuse_decoder::run(&mut run_args)?;
 
         if args.verbose {
-            let mut table = Table::new();
-            for (tdf_id, count) in tdf_stats.iter() {
-                table.add_row(row![tdf::decoders::tdf_name(tdf_id), count]);
+            for (remote_id, tdfs) in tdf_stats.iter() {
+                let mut table = Table::new();
+
+                for (tdf_id, count) in tdfs.iter() {
+                    table.add_row(row![tdf::decoders::tdf_name(tdf_id), count]);
+                }
+                table.set_titles(row!["TDF", "Count"]);
+                table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
+
+                if let Some(x) = remote_id {
+                    println!("Remote ID: {:016x}", x);
+                }
+                table.printstd();
+                println!("");
             }
-            table.set_titles(row!["TDF", "Count"]);
-            table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-            table.printstd();
-            println!("");
 
             // Output Block statistics
             let mut sorted: Vec<(&blocks::BlockTypes, &usize)> = block_stats.iter().collect();
