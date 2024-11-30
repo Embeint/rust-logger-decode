@@ -70,7 +70,7 @@ def decoders_gen(tdf_defs, output):
     def field_fmt(field):
         if field['type'] == 'char':
             return ["{}"]
-        if field.get('display_fmt', "") == "hex":
+        if 'display' in field and field['display'].get('fmt', '') == "hex":
             single = ["0x{:x}"]
         else:
             single = ["{}"]
