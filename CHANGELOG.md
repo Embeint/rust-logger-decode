@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.0.0] - 2024-12-19
+
+ - Added missing Windows release target
+ - Extended TDF time period support
+ - Added support for `u24` and `u48` integer types
+ - Populated `README.md`
+ - Updated all dependencies
+ - Handling of read underflow on TDFs
+ - Format hex values with requested number of digits
+ - Basic Variable-Length-Array TDF support
+
 ## [0.2.1] - 2024-12-01
 
  - Fixed Github release generation action
