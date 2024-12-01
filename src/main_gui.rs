@@ -302,7 +302,7 @@ fn copyright_bar(_ctx: &egui::Context, ui: &mut egui::Ui) {
             });
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {
-                egui::widgets::global_dark_light_mode_buttons(ui);
+                egui::widgets::global_theme_preference_buttons(ui);
             });
         });
 }
