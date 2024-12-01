@@ -365,8 +365,8 @@ fn draw_tdf_table(ui: &mut egui::Ui, id: Option<u64>, tdfs: &HashMap<u16, usize>
 
 fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
     egui::CentralPanel::default().show(ctx, |ui| {
-        ui.columns(3, |columns| {
-            columns[0].push_id(0, |ui| {
+        ui.columns_const(|[col_blocks, col_tdfs, col_files]| {
+            col_blocks.push_id(0, |ui| {
                 draw_right_edge(ui, 1.0, egui::Color32::GRAY);
 
                 TableBuilder::new(ui)
@@ -407,7 +407,7 @@ fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
                     });
             });
 
-            columns[1].push_id(1, |ui| {
+            col_tdfs.push_id(1, |ui| {
                 draw_right_edge(ui, 1.0, egui::Color32::GRAY);
 
                 if let Some(tdf_per_id) = app.tdf_stats.as_ref() {
@@ -424,7 +424,7 @@ fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
                 }
             });
 
-            columns[2].push_id(2, |ui| {
+            col_files.push_id(2, |ui| {
                 TableBuilder::new(ui)
                     .striped(true)
                     .column(Column::remainder())
