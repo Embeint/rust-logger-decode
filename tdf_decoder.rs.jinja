@@ -35,7 +35,9 @@ fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, size: u8) ->  std::io::Resu
 
 pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> std::io::Result<String>
 {
-    match tdf_id {
+    let cursor_start = cursor.position();
+
+    let res = match tdf_id {
 {% for tdf_id, info in definitions.items() %}
         {{ tdf_id }} => 
             Ok(format!(
@@ -50,5 +52,14 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             cursor.read_exact(&mut buf)?;
             Ok(format!("{}", hex::encode(buf)))
         }
+    };
+    let cursor_end = cursor.position();
+    let cursor_read = cursor_end - cursor_start;
+    let underflow = size as u64 - cursor_read;
+
+    // Handle read underflow (more data specified than expected)
+    if underflow > 0 {
+        tdf_field_read_string(cursor, underflow as u8)?;
     }
+    res
 }
