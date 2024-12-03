@@ -30,6 +30,9 @@ pub fn tdf_name(tdf_id: &u16) -> String
         26 => String::from("RUNTIME_ERROR"),
         27 => String::from("CHARGER_EN_CONTROL"),
         28 => String::from("GNSS_FIX_INFO"),
+        29 => String::from("BLUETOOTH_CONNECTION"),
+        30 => String::from("BLUETOOTH_RSSI"),
+        31 => String::from("BLUETOOTH_DATA_THROUGHPUT"),
         100 => String::from("ARRAY_TYPE"),
         _ => format!("{}", tdf_id),
     }
@@ -63,6 +66,9 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         26 => vec!["error_id","error_ctx"],
         27 => vec!["enabled"],
         28 => vec!["time_fix","location_fix","num_sv"],
+        29 => vec!["type","val","connected"],
+        30 => vec!["type","val","rssi"],
+        31 => vec!["type","val","throughput"],
         100 => vec!["array[0]","array[1]","array[2]","array[3]"],
         _ => vec!["unknown"],
     }
@@ -306,6 +312,27 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u16::<LittleEndian>()?,
                 cursor.read_u16::<LittleEndian>()?,
                 cursor.read_u8()?,
+            )),
+        29 => 
+            Ok(format!(
+                "{},0x{:x},{}",
+                cursor.read_u8()?,
+                cursor.read_u48::<LittleEndian>()?,
+                cursor.read_u8()?,
+            )),
+        30 => 
+            Ok(format!(
+                "{},0x{:x},{}",
+                cursor.read_u8()?,
+                cursor.read_u48::<LittleEndian>()?,
+                cursor.read_i8()?,
+            )),
+        31 => 
+            Ok(format!(
+                "{},0x{:x},{}",
+                cursor.read_u8()?,
+                cursor.read_u48::<LittleEndian>()?,
+                cursor.read_i32::<LittleEndian>()?,
             )),
         100 => 
             Ok(format!(

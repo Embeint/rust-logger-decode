@@ -41,19 +41,34 @@ def decoders_gen(tdf_defs, output):
             func += "::<LittleEndian>"
         func += "()?"
         if c := field.get('conversion'):
-            func += ' as f64'
-            if 'm' in c and c['m'] != 0:
-                val = c['m']
-                inverse_ratio = (1 / val).as_integer_ratio()
-                # If number can be represented as a whole number division, use that
-                # instead for numerical stability (/ 10) is better than (* 0.1) as
-                # the former can be represented without loss of precision.
-                if inverse_ratio[1] == 1:
-                    func += f" / {inverse_ratio[0]}.0"
+            if endian := c.get('int', None):
+                assert 'num' in field
+                assert t[0] == 'u8'
+                e = 'LittleEndian' if endian == 'little' else 'BigEndian'
+                if field['num'] == 3:
+                    t = 'u24'
+                elif field['num'] == 6:
+                    t = 'u48'
                 else:
-                    func += f" * {float_format(c['m'])}"
-            if 'c' in c and c['c'] != 0:
-                func += f" + {float_format(c['c'])}"
+                    raise RuntimeError("Unknown integer length")
+
+                func = f"cursor.read_{t}::<{e}>()?"
+                del field['num']
+
+            if 'm' in c or 'c' in c:
+                func += ' as f64'
+                if 'm' in c and c['m'] != 0:
+                    val = c['m']
+                    inverse_ratio = (1 / val).as_integer_ratio()
+                    # If number can be represented as a whole number division, use that
+                    # instead for numerical stability (/ 10) is better than (* 0.1) as
+                    # the former can be represented without loss of precision.
+                    if inverse_ratio[1] == 1:
+                        func += f" / {inverse_ratio[0]}.0"
+                    else:
+                        func += f" * {float_format(c['m'])}"
+                if 'c' in c and c['c'] != 0:
+                    func += f" + {float_format(c['c'])}"
 
         n = field['name']
         if name_prefix is not None:
