@@ -92,7 +92,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
     let res = match tdf_id {
         1 => 
             Ok(format!(
-                "0x{:x},{},{},{},0x{:x},0x{:x},{},{},{},0x{:x}",
+                "0x{:08x},{},{},{},0x{:08x},0x{:08x},{},{},{},0x{:02x}",
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u8()?,
                 cursor.read_u8()?,
@@ -131,7 +131,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             )),
         6 => 
             Ok(format!(
-                "{},0x{:x},{},{},0x{:x},0x{:x},{}",
+                "{},0x{:08x},{},{},0x{:08x},0x{:08x},{}",
                 cursor.read_u8()?,
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u32::<LittleEndian>()?,
@@ -214,7 +214,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             )),
         20 => 
             Ok(format!(
-                "{},{},{},{},{},{},{},0x{:x},{},{},{},0x{:x},0x{:x},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},0x{:x},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},0x{:02x},{},{},{},0x{:02x},0x{:02x},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},0x{:04x},{},{},{},{},{},{},{}",
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u16::<LittleEndian>()?,
                 cursor.read_u8()?,
@@ -291,7 +291,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             )),
         25 => 
             Ok(format!(
-                "0x{:x},{}",
+                "0x{:08x},{}",
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u16::<LittleEndian>()?,
             )),
@@ -315,21 +315,21 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             )),
         29 => 
             Ok(format!(
-                "{},0x{:x},{}",
+                "{},0x{:012x},{}",
                 cursor.read_u8()?,
                 cursor.read_u48::<LittleEndian>()?,
                 cursor.read_u8()?,
             )),
         30 => 
             Ok(format!(
-                "{},0x{:x},{}",
+                "{},0x{:012x},{}",
                 cursor.read_u8()?,
                 cursor.read_u48::<LittleEndian>()?,
                 cursor.read_i8()?,
             )),
         31 => 
             Ok(format!(
-                "{},0x{:x},{}",
+                "{},0x{:012x},{}",
                 cursor.read_u8()?,
                 cursor.read_u48::<LittleEndian>()?,
                 cursor.read_i32::<LittleEndian>()?,
