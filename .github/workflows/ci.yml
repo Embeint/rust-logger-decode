@@ -9,11 +9,16 @@ env:
 jobs:
   build_and_test:
     name: Rust project - latest
-    runs-on: ubuntu-latest
     strategy:
+      max-parallel: 1
+      fail-fast: true
       matrix:
-        toolchain:
-          - stable
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+          # Universal macOS binary is supported as universal-apple-darwin.
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
