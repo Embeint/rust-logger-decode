@@ -33,6 +33,17 @@ fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, size: u8) ->  std::io::Resu
     }
 }
 
+fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  std::io::Result<String>
+{
+    let cursor_current = cursor.position();
+    let cursor_read = cursor_current - cursor_start;
+    let bytes_remaining = size as u64 - cursor_read;
+    let mut buf = vec![0u8; bytes_remaining as usize];
+
+    cursor.read_exact(&mut buf)?;
+    Ok(format!("{}", hex::encode(buf)))
+}
+
 pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> std::io::Result<String>
 {
     let cursor_start = cursor.position();
