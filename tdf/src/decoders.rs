@@ -33,6 +33,8 @@ pub fn tdf_name(tdf_id: &u16) -> String
         29 => String::from("BLUETOOTH_CONNECTION"),
         30 => String::from("BLUETOOTH_RSSI"),
         31 => String::from("BLUETOOTH_DATA_THROUGHPUT"),
+        32 => String::from("ALGORITHM_CLASS_HISTOGRAM"),
+        33 => String::from("ALGORITHM_CLASS_TIME_SERIES"),
         100 => String::from("ARRAY_TYPE"),
         _ => format!("{}", tdf_id),
     }
@@ -62,13 +64,15 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         22 => vec!["payload[0]","payload[1]","payload[2]","payload[3]","payload[4]","payload[5]","payload[6]","payload[7]","payload[8]"],
         23 => vec!["count","std_dev"],
         24 => vec!["value"],
-        25 => vec!["algorithm_id","algorithm_version"],
+        25 => vec!["algorithm_id","algorithm_version","output"],
         26 => vec!["error_id","error_ctx"],
         27 => vec!["enabled"],
         28 => vec!["time_fix","location_fix","num_sv"],
         29 => vec!["type","val","connected"],
         30 => vec!["type","val","rssi"],
         31 => vec!["type","val","throughput"],
+        32 => vec!["algorithm_id","algorithm_version","classes"],
+        33 => vec!["algorithm_id","algorithm_version","values"],
         100 => vec!["array[0]","array[1]","array[2]","array[3]"],
         _ => vec!["unknown"],
     }
@@ -83,6 +87,17 @@ fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, size: u8) ->  std::io::Resu
         Ok(val) => Ok(format!("\"{}\"", val.trim_matches(char::from(0)))),
         Err(..) => Ok(String::from("\"\""))
     }
+}
+
+fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  std::io::Result<String>
+{
+    let cursor_current = cursor.position();
+    let cursor_read = cursor_current - cursor_start;
+    let bytes_remaining = size as u64 - cursor_read;
+    let mut buf = vec![0u8; bytes_remaining as usize];
+
+    cursor.read_exact(&mut buf)?;
+    Ok(format!("{}", hex::encode(buf)))
 }
 
 pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> std::io::Result<String>
@@ -291,9 +306,10 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             )),
         25 => 
             Ok(format!(
-                "0x{:08x},{}",
+                "0x{:08x},{},{}",
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u16::<LittleEndian>()?,
+                tdf_field_read_vla(cursor, cursor_start, size)?,
             )),
         26 => 
             Ok(format!(
@@ -333,6 +349,20 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u8()?,
                 cursor.read_u48::<LittleEndian>()?,
                 cursor.read_i32::<LittleEndian>()?,
+            )),
+        32 => 
+            Ok(format!(
+                "0x{:08x},{},{}",
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+                tdf_field_read_vla(cursor, cursor_start, size)?,
+            )),
+        33 => 
+            Ok(format!(
+                "0x{:08x},{},{}",
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+                tdf_field_read_vla(cursor, cursor_start, size)?,
             )),
         100 => 
             Ok(format!(
