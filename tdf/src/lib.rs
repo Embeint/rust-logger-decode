@@ -1,5 +1,5 @@
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind};
 
 pub mod decoders;
 pub mod time;
@@ -35,10 +35,12 @@ pub fn block_decode<T: TdfOutput>(
             break;
         }
         let tdf_id = header & 0x0FFF;
+        let time_flags = header & 0xC000;
+        let array_flags = header & 0x3000;
         let size = cursor.read_u8()?;
         let mut array_num = 1;
         let mut array_time_period = 0;
-        match header & 0xC000 {
+        match time_flags {
             0x0000 => {}
             0x4000 => {
                 buffer_time = ((cursor.read_u32::<LittleEndian>()? as i64) << 16)
@@ -50,9 +52,21 @@ pub fn block_decode<T: TdfOutput>(
                 panic!("How?");
             }
         }
-        if header & 0x1000 != 0 {
-            array_num = cursor.read_u8()?;
-            array_time_period = cursor.read_u16::<LittleEndian>()? as i64;
+        match array_flags {
+            0x0000 => {}
+            0x1000 => {
+                array_num = cursor.read_u8()?;
+                let period_encoded = cursor.read_u16::<LittleEndian>()?;
+                // Handle time period scaling
+                if array_time_period >= 32768 {
+                    array_time_period = ((period_encoded - 32768) * 8192) as i64;
+                } else {
+                    array_time_period = period_encoded as i64;
+                }
+            }
+            _ => {
+                return Err(std::io::Error::new(ErrorKind::Other, "Unknown array type"));
+            }
         }
 
         let mut sample_time = buffer_time;
