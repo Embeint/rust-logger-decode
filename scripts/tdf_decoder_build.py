@@ -5,7 +5,6 @@ import decimal
 import json
 import os
 import pathlib
-import math
 from numpy import format_float_positional as float_format
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
