@@ -202,6 +202,14 @@ fn core_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
             });
             ui.end_row();
 
+            // Clear the selected paths if they no longer exist (SD card removed)
+            if let Some(input) = &app.input_path {
+                if !input.exists() {
+                    app.input_path = None;
+                    app.input_files = None;
+                }
+            }
+
             ui.label("Device ID");
             if let Some(file_list) = &app.input_files {
                 ui.add_enabled_ui(file_list.len() > 1, |ui| {
