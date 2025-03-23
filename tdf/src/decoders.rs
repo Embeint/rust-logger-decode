@@ -35,6 +35,15 @@ pub fn tdf_name(tdf_id: &u16) -> String
         31 => String::from("BLUETOOTH_DATA_THROUGHPUT"),
         32 => String::from("ALGORITHM_CLASS_HISTOGRAM"),
         33 => String::from("ALGORITHM_CLASS_TIME_SERIES"),
+        34 => String::from("LTE_TAC_CELLS"),
+        35 => String::from("WIFI_AP_INFO"),
+        36 => String::from("DEVICE_TILT"),
+        37 => String::from("NRF9X_GNSS_PVT"),
+        38 => String::from("BATTERY_CHARGE_ACCUMULATED"),
+        39 => String::from("INFUSE_BLUETOOTH_RSSI"),
+        40 => String::from("ADC_RAW_8"),
+        41 => String::from("ADC_RAW_16"),
+        42 => String::from("ADC_RAW_32"),
         100 => String::from("ARRAY_TYPE"),
         _ => format!("{}", tdf_id),
     }
@@ -73,6 +82,15 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         31 => vec!["type","val","throughput"],
         32 => vec!["algorithm_id","algorithm_version","classes"],
         33 => vec!["algorithm_id","algorithm_version","values"],
+        34 => vec!["mcc","mnc","eci","tac","earfcn","rsrp","rsrq","earfcn","pci","time_diff","rsrp","rsrq"],
+        35 => vec!["val","channel","rsrp"],
+        36 => vec!["cosine"],
+        37 => vec!["lat","lon","height","h_acc","v_acc","h_speed","h_speed_acc","v_speed","v_speed_acc","head_mot","head_acc","year","month","day","hour","min","sec","ms","p_dop","h_dop","v_dop","t_dop","flags","num_sv"],
+        38 => vec!["charge"],
+        39 => vec!["infuse_id","rssi"],
+        40 => vec!["val"],
+        41 => vec!["val"],
+        42 => vec!["val"],
         100 => vec!["array[0]","array[1]","array[2]","array[3]"],
         _ => vec!["unknown"],
     }
@@ -363,6 +381,88 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u16::<LittleEndian>()?,
                 tdf_field_read_vla(cursor, cursor_start, size)?,
+            )),
+        34 => 
+            Ok(format!(
+                "{},{},{},{},{},{},{},{},{},{},{},{}",
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u8()? as f64 / -1.0,
+                cursor.read_i8()?,
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()? as f64 / 1000.0,
+                cursor.read_u8()? as f64 / -1.0,
+                cursor.read_i8()?,
+            )),
+        35 => 
+            Ok(format!(
+                "0x{:012x},{},{}",
+                cursor.read_u48::<LittleEndian>()?,
+                cursor.read_u8()?,
+                cursor.read_i8()?,
+            )),
+        36 => 
+            Ok(format!(
+                "{}",
+                cursor.read_f32::<LittleEndian>()?,
+            )),
+        37 => 
+            Ok(format!(
+                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},0x{:02x},{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0,
+                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0,
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
+                cursor.read_i32::<LittleEndian>()? as f64 / 100000.0,
+                cursor.read_u32::<LittleEndian>()? as f64 / 100000.0,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
+                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
+                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
+                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+            )),
+        38 => 
+            Ok(format!(
+                "{}",
+                cursor.read_i32::<LittleEndian>()?,
+            )),
+        39 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u64::<LittleEndian>()?,
+                cursor.read_i8()?,
+            )),
+        40 => 
+            Ok(format!(
+                "{}",
+                cursor.read_i8()?,
+            )),
+        41 => 
+            Ok(format!(
+                "{}",
+                cursor.read_i16::<LittleEndian>()?,
+            )),
+        42 => 
+            Ok(format!(
+                "{}",
+                cursor.read_i32::<LittleEndian>()?,
             )),
         100 => 
             Ok(format!(
