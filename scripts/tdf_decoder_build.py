@@ -9,7 +9,7 @@ from numpy import format_float_positional as float_format
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-
+# C type: (rust_type, ::<LittleEndian>?)
 rust_type = {
     'char': ('u8', False),
     'int8_t': ('i8', False),
@@ -20,6 +20,7 @@ rust_type = {
     'uint32_t': ('u32', True),
     'int64_t': ('i64', True),
     'uint64_t': ('u64', True),
+    'float': ('f32', True),
     'float32_t': ('f32', True),
     'float64_t': ('f64', True),
 }
@@ -122,7 +123,7 @@ def decoders_gen(tdf_defs, output):
                 info['rust_convs'] += field_conv_func(f)
                 fmt += field_fmt(f)
             else:
-                raise RuntimeError(f"Bad type {info['type']}")
+                raise RuntimeError(f"Bad type '{f['type']}'")
 
         info['rust_head'] = ",".join([f"\"{c[0]}\"" for c in info['rust_convs']])
         info['rust_fmt'] = ",".join(fmt)
