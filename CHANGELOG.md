@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.1.0] - 2024-03-26
+
+ - Reset input file path if path no longer exists
+ - Update TDF definitions
+
 ## [1.0.0] - 2024-12-19
 
  - Added missing Windows release target
