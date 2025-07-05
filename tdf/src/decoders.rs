@@ -44,6 +44,11 @@ pub fn tdf_name(tdf_id: &u16) -> String
         40 => String::from("ADC_RAW_8"),
         41 => String::from("ADC_RAW_16"),
         42 => String::from("ADC_RAW_32"),
+        43 => String::from("ANNOTATION"),
+        44 => String::from("LORA_RX"),
+        45 => String::from("LORA_TX"),
+        46 => String::from("IDX_ARRAY_FREQ"),
+        47 => String::from("IDX_ARRAY_PERIOD"),
         100 => String::from("ARRAY_TYPE"),
         _ => format!("{}", tdf_id),
     }
@@ -91,6 +96,11 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         40 => vec!["val"],
         41 => vec!["val"],
         42 => vec!["val"],
+        43 => vec!["timestamp","event"],
+        44 => vec!["snr","rssi","payload"],
+        45 => vec!["payload"],
+        46 => vec!["tdf_id","frequency"],
+        47 => vec!["tdf_id","period"],
         100 => vec!["array[0]","array[1]","array[2]","array[3]"],
         _ => vec!["unknown"],
     }
@@ -463,6 +473,36 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             Ok(format!(
                 "{}",
                 cursor.read_i32::<LittleEndian>()?,
+            )),
+        43 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u32::<LittleEndian>()?,
+                tdf_field_read_string(cursor, 0)?,
+            )),
+        44 => 
+            Ok(format!(
+                "{},{},{}",
+                cursor.read_i8()?,
+                cursor.read_i16::<LittleEndian>()?,
+                tdf_field_read_vla(cursor, cursor_start, size)?,
+            )),
+        45 => 
+            Ok(format!(
+                "{}",
+                tdf_field_read_vla(cursor, cursor_start, size)?,
+            )),
+        46 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+            )),
+        47 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
             )),
         100 => 
             Ok(format!(
