@@ -60,6 +60,7 @@ impl TdfOutput for TdfCsvWriter {
         remote_id: Option<u64>,
         tdf_id: u16,
         tdf_time: i64,
+        tdf_idx: Option<u16>,
         size: u8,
         cursor: &mut Cursor<&[u8]>,
     ) -> std::io::Result<()> {
@@ -91,15 +92,22 @@ impl TdfOutput for TdfCsvWriter {
 
         // Construct CSV line
         let reading = tdf::decoders::tdf_read_into_str(&tdf_id, size, cursor)?;
-        let time = match self.output_unix {
-            true => {
-                let (unix_seconds, unix_nano) = tdf::time::tdf_time_to_unix(tdf_time);
-                format!("{}.{:06}", unix_seconds, unix_nano / 1000)
+        let time = match tdf_idx {
+            Some(idx) => {
+                // Use the index directly if provided
+                format!("{idx}")
             }
-            false => {
-                let datetime = tdf::time::tdf_time_to_datetime(tdf_time).expect("Invalid time");
-                datetime.to_rfc3339_opts(SecondsFormat::Micros, true)
-            }
+            None => match self.output_unix {
+                // Otherwise, format the time to a string
+                true => {
+                    let (unix_seconds, unix_nano) = tdf::time::tdf_time_to_unix(tdf_time);
+                    format!("{}.{:06}", unix_seconds, unix_nano / 1000)
+                }
+                false => {
+                    let datetime = tdf::time::tdf_time_to_datetime(tdf_time).expect("Invalid time");
+                    datetime.to_rfc3339_opts(SecondsFormat::Micros, true)
+                }
+            },
         };
 
         let line: String = format!("{},{}\n", time, reading);
