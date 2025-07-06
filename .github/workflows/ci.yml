@@ -20,7 +20,18 @@ jobs:
           - os: macos-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
-      - run: cargo build --bin infuse_decoder --verbose
-      - run: cargo build --bin infuse_decoder_cli --verbose
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Toolchain install & update
+        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      - name: Build GUI
+        run: cargo build --bin infuse_decoder --verbose
+      - name: Build CLI
+        run: cargo build --bin infuse_decoder_cli --verbose
+      - name: Run CLI
+        run: cargo run --bin infuse_decoder_cli -- --path ./data/tdf_test_blocks.bin --output . --name ci_test --verbose
+      - name: Display and cleanup results
+        shell: bash
+        run: |
+          ls -la *.csv
+          rm ./*.csv
