@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.2.0] - 2024-07-06
+
+ - Add support for the DIFF and IDX encoded array types
+ - Fix the handling of array periods over 0.5 seconds
+ - Update TDF definitions
+
 ## [1.1.0] - 2024-03-26
 
  - Reset input file path if path no longer exists
