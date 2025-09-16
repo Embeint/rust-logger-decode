@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Result, Error, ErrorKind};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -22,7 +22,7 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
     }
 }
 
-fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, size: u8) ->  std::io::Result<String>
+fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, size: u8) ->  Result<String>
 {
     let mut buf = vec![0u8; size as usize];
     cursor.read_exact(&mut buf)?;
@@ -33,10 +33,16 @@ fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, size: u8) ->  std::io::Resu
     }
 }
 
-fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  std::io::Result<String>
+fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  Result<String>
 {
     let cursor_current = cursor.position();
     let cursor_read = cursor_current - cursor_start;
+    if cursor_read >= size as u64 {
+        return Result::Err(Error::new(
+            ErrorKind::InvalidData,
+            "Insufficient data remaining",
+        ));
+    }
     let bytes_remaining = size as u64 - cursor_read;
     let mut buf = vec![0u8; bytes_remaining as usize];
 
@@ -44,7 +50,7 @@ fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) -
     Ok(format!("{}", hex::encode(buf)))
 }
 
-pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> std::io::Result<String>
+pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> Result<String>
 {
     let cursor_start = cursor.position();
 

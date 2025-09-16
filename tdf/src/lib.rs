@@ -151,6 +151,13 @@ pub fn block_decode<T: TdfOutput>(
         let mut array_time_period = 0;
         let mut array_sample_idx = None;
         let mut reconstructed: Option<Vec<u8>> = None;
+        if size == 0 {
+            // Invalid header, remainder of block can't be trusted
+            return std::io::Result::Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "TDF of length 0",
+            ));
+        }
         match time_flags {
             TDF_TIME_NONE => {}
             TDF_TIME_GLOBAL => {
@@ -167,6 +174,13 @@ pub fn block_decode<T: TdfOutput>(
             TDF_ARRAY_NONE => {}
             TDF_ARRAY_TIME => {
                 array_num = cursor.read_u8()?;
+                if array_num == 0 {
+                    // Invalid header, remainder of block can't be trusted
+                    return std::io::Result::Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Time array of 0 elements",
+                    ));
+                }
                 let period_encoded = cursor.read_u16::<LittleEndian>()?;
                 let period_masked = period_encoded & TDF_PERIOD_SCALING_VAL_MASK;
                 // Handle time period scaling
