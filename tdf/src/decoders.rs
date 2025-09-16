@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Error, ErrorKind};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -121,6 +121,9 @@ fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) -
 {
     let cursor_current = cursor.position();
     let cursor_read = cursor_current - cursor_start;
+    if  (size as i64 - cursor_read as i64) <  0 {
+        return Err(Error::new(ErrorKind::InvalidData, "VLA size mismatch"));
+    }
     let bytes_remaining = size as u64 - cursor_read;
     let mut buf = vec![0u8; bytes_remaining as usize];
 
@@ -520,11 +523,16 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
     };
     let cursor_end = cursor.position();
     let cursor_read = cursor_end - cursor_start;
-    let underflow = size as u64 - cursor_read;
+    let size_mismatch = size as i64 - cursor_read as i64;
 
     // Handle read underflow (more data specified than expected)
-    if underflow > 0 {
-        tdf_field_read_string(cursor, underflow as u8)?;
+    if size_mismatch > 0 {
+        tdf_field_read_string(cursor, size_mismatch as u8)?;
+    } else if size_mismatch < 0 {
+        // Handle read overflow (less data specified than expected)
+        // This should never happen if the TDF is well-formed
+        // but we can at least avoid a panic by seeking back
+        cursor.set_position(cursor_end - (-size_mismatch) as u64);
     }
     res
 }
