@@ -216,6 +216,64 @@
                     "description": "Address bytes"
                 }
             ]
+        },
+        "tdf_struct_wifi_network_params": {
+            "description": "WiFi network parameters",
+            "fields": [
+                {
+                    "name": "bssid",
+                    "type": "uint8_t",
+                    "num": 6,
+                    "display": {
+                        "fmt": "hex",
+                        "digits": 12
+                    },
+                    "conversion": {
+                        "int": "big"
+                    },
+                    "description": "Basic Service Set Identifier (MAC address)"
+                },
+                {
+                    "name": "band",
+                    "type": "uint8_t",
+                    "description": "Frequency band"
+                },
+                {
+                    "name": "channel",
+                    "type": "uint8_t",
+                    "description": "Channel index"
+                },
+                {
+                    "name": "iface_mode",
+                    "type": "uint8_t",
+                    "description": "https://w1.fi/wpa_supplicant/devel/defs_8h.html#a4aeb27c1e4abd046df3064ea9756f0bc"
+                },
+                {
+                    "name": "link_mode",
+                    "type": "uint8_t",
+                    "description": "WiFi link operating mode (https://en.wikipedia.org/wiki/Wi-Fi#Versions_and_generations)"
+                },
+                {
+                    "name": "security",
+                    "type": "uint8_t",
+                    "description": "IEEE 802.11 security type"
+                },
+                {
+                    "name": "rssi",
+                    "type": "int8_t",
+                    "description": "Received signal strength (dBm)"
+                },
+                {
+                    "name": "beacon_interval",
+                    "type": "uint16_t",
+                    "description": "Beacon interval (ms)"
+                },
+                {
+                    "name": "twt_capable",
+                    "type": "uint8_t",
+                    "description": "Target Wake Time capable?"
+                }
+            ]
         }
     },
     "definitions": {
@@ -1551,18 +1609,28 @@
                 {
                     "name": "snr",
                     "type": "int8_t",
-                    "description": "Signal to Noise ratio (dB)"
+                    "description": "Signal to Noise ratio (dB)",
+                    "display": {
+                        "postfix": "dB"
+                    }
                 },
                 {
                     "name": "rssi",
                     "type": "int16_t",
-                    "description": "Received signal strength (dBm)"
+                    "description": "Received signal strength (dBm)",
+                    "display": {
+                        "postfix": "dBm"
+                    }
                 },
                 {
                     "name": "payload",
                     "type": "uint8_t",
                     "num": 0,
-                    "description": "Packet payload"
+                    "description": "Packet payload",
+                    "display": {
+                        "fmt": "hex",
+                        "digits": 2
+                    }
                 }
             ]
         },
@@ -1574,7 +1642,11 @@
                     "name": "payload",
                     "type": "uint8_t",
                     "num": 0,
-                    "description": "Payload"
+                    "description": "Payload",
+                    "display": {
+                        "fmt": "hex",
+                        "digits": 2
+                    }
                 }
             ]
         },
@@ -1590,7 +1662,10 @@
                 {
                     "name": "frequency",
                     "type": "uint32_t",
-                    "description": "Frequency of samples in Hertz"
+                    "description": "Frequency of samples in Hertz",
+                    "display": {
+                        "postfix": "Hz"
+                    }
                 }
             ]
         },
@@ -1606,19 +1681,103 @@
                 {
                     "name": "period",
                     "type": "uint32_t",
-                    "description": "Period between samples in nanoseconds"
+                    "description": "Period between samples in nanoseconds",
+                    "display": {
+                        "postfix": "ns"
+                    }
                 }
             ]
         },
-        "100": {
-            "name": "ARRAY_TYPE",
-            "description": "Example array type",
+        "48": {
+            "name": "WIFI_CONNECTED",
+            "description": "WiFi network is now connected",
             "fields": [
                 {
-                    "name": "array",
+                    "name": "network",
+                    "type": "struct tdf_struct_wifi_network_params",
+                    "description": "Network parameters"
+                }
+            ]
+        },
+        "49": {
+            "name": "WIFI_CONNECTION_FAILED",
+            "description": "Failed to connect to a WiFi network",
+            "fields": [
+                {
+                    "name": "reason",
                     "type": "uint8_t",
-                    "num": 4,
-                    "description": "I am an array of length 4"
+                    "description": "Reported reason for connection failure"
+                }
+            ]
+        },
+        "50": {
+            "name": "WIFI_DISCONNECTED",
+            "description": "Wi-Fi network is now disconnected",
+            "fields": [
+                {
+                    "name": "reason",
+                    "type": "uint8_t",
+                    "description": "Reported reason for disconnection"
+                }
+            ]
+        },
+        "51": {
+            "name": "NETWORK_SCAN_COUNT",
+            "description": "Counts associated with scanning Wi-Fi and LTE networks",
+            "fields": [
+                {
+                    "name": "num_wifi",
+                    "type": "uint8_t",
+                    "description": "Number of Wi-Fi APs found"
+                },
+                {
+                    "name": "num_lte",
+                    "type": "uint8_t",
+                    "description": "Number of LTE cells found"
+                }
+            ]
+        },
+        "52": {
+            "name": "EXCEPTION_STACK_FRAME",
+            "description": "Generic exception stack frame",
+            "fields": [
+                {
+                    "name": "frame",
+                    "type": "uint32_t",
+                    "num": 0,
+                    "description": "Stack frame value",
+                    "display": {
+                        "fmt": "hex",
+                        "digits": 8
+                    }
+                }
+            ]
+        },
+        "53": {
+            "name": "BATTERY_VOLTAGE",
+            "description": "Battery voltage",
+            "fields": [
+                {
+                    "name": "voltage",
+                    "type": "uint16_t",
+                    "description": "Battery voltage (milliVolts)",
+                    "display": {
+                        "postfix": "mV"
+                    }
+                }
+            ]
+        },
+        "54": {
+            "name": "BATTERY_SOC",
+            "description": "Battery state of charge",
+            "fields": [
+                {
+                    "name": "soc",
+                    "type": "uint8_t",
+                    "description": "State of charge (percent)",
+                    "display": {
+                        "postfix": "%"
+                    }
                 }
             ]
         }

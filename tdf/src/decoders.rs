@@ -1,6 +1,6 @@
 use std::io::{Cursor, Read, Result, Error, ErrorKind};
 
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
 
 pub fn tdf_name(tdf_id: &u16) -> String
 {
@@ -49,7 +49,13 @@ pub fn tdf_name(tdf_id: &u16) -> String
         45 => String::from("LORA_TX"),
         46 => String::from("IDX_ARRAY_FREQ"),
         47 => String::from("IDX_ARRAY_PERIOD"),
-        100 => String::from("ARRAY_TYPE"),
+        48 => String::from("WIFI_CONNECTED"),
+        49 => String::from("WIFI_CONNECTION_FAILED"),
+        50 => String::from("WIFI_DISCONNECTED"),
+        51 => String::from("NETWORK_SCAN_COUNT"),
+        52 => String::from("EXCEPTION_STACK_FRAME"),
+        53 => String::from("BATTERY_VOLTAGE"),
+        54 => String::from("BATTERY_SOC"),
         _ => format!("{}", tdf_id),
     }
 }
@@ -101,7 +107,13 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         45 => vec!["payload"],
         46 => vec!["tdf_id","frequency"],
         47 => vec!["tdf_id","period"],
-        100 => vec!["array[0]","array[1]","array[2]","array[3]"],
+        48 => vec!["bssid","band","channel","iface_mode","link_mode","security","rssi","beacon_interval","twt_capable"],
+        49 => vec!["reason"],
+        50 => vec!["reason"],
+        51 => vec!["num_wifi","num_lte"],
+        52 => vec!["frame"],
+        53 => vec!["voltage"],
+        54 => vec!["soc"],
         _ => vec!["unknown"],
     }
 }
@@ -510,12 +522,48 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u16::<LittleEndian>()?,
                 cursor.read_u32::<LittleEndian>()?,
             )),
-        100 => 
+        48 => 
             Ok(format!(
-                "{},{},{},{}",
+                "0x{:012x},{},{},{},{},{},{},{},{}",
+                cursor.read_u48::<BigEndian>()?,
                 cursor.read_u8()?,
                 cursor.read_u8()?,
                 cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_i8()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u8()?,
+            )),
+        49 => 
+            Ok(format!(
+                "{}",
+                cursor.read_u8()?,
+            )),
+        50 => 
+            Ok(format!(
+                "{}",
+                cursor.read_u8()?,
+            )),
+        51 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+            )),
+        52 => 
+            Ok(format!(
+                "{}",
+                tdf_field_read_vla(cursor, cursor_start, size)?,
+            )),
+        53 => 
+            Ok(format!(
+                "{}",
+                cursor.read_u16::<LittleEndian>()?,
+            )),
+        54 => 
+            Ok(format!(
+                "{}",
                 cursor.read_u8()?,
             )),
         _ => {

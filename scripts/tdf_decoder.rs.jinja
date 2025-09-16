@@ -1,6 +1,6 @@
 use std::io::{Cursor, Read, Result, Error, ErrorKind};
 
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
 
 pub fn tdf_name(tdf_id: &u16) -> String
 {

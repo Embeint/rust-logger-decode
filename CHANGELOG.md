@@ -7,6 +7,7 @@ This project adheres to [Semantic Versioning](https://semver.org).
 ## [1.3.0] - 2025-09-16
 
  - Fix crashes on invalid headers lengths and sizes
+ - Update TDF definitions
 
 ## [1.2.0] - 2024-07-06
 
