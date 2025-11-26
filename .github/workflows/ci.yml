@@ -16,7 +16,6 @@ jobs:
         include:
           - os: ubuntu-latest
           - os: windows-latest
-          # Universal macOS binary is supported as universal-apple-darwin.
           - os: macos-latest
     runs-on: ${{ matrix.os }}
     steps:
