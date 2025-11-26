@@ -505,6 +505,68 @@
                 }
             ]
         },
+        "7": {
+            "name": "ANNOUNCE_V2",
+            "description": "Common announcement packet",
+            "fields": [
+                {
+                    "name": "application",
+                    "type": "uint32_t",
+                    "description": "Unique application ID",
+                    "display": {
+                        "fmt": "hex",
+                        "digits": 8
+                    }
+                },
+                {
+                    "name": "version",
+                    "type": "struct tdf_struct_mcuboot_img_sem_ver",
+                    "description": "Running application version"
+                },
+                {
+                    "name": "board_crc",
+                    "type": "uint16_t",
+                    "description": "CRC of board name",
+                    "display": {
+                        "fmt": "hex",
+                        "digits": 4
+                    }
+                },
+                {
+                    "name": "kv_crc",
+                    "type": "uint32_t",
+                    "description": "Key-Value store reflect global CRC",
+                    "display": {
+                        "fmt": "hex",
+                        "digits": 8
+                    }
+                },
+                {
+                    "name": "blocks",
+                    "type": "uint32_t",
+                    "description": "Logger blocks written"
+                },
+                {
+                    "name": "uptime",
+                    "type": "uint32_t",
+                    "description": "Uptime in seconds"
+                },
+                {
+                    "name": "reboots",
+                    "type": "uint16_t",
+                    "description": "Reboot counter"
+                },
+                {
+                    "name": "flags",
+                    "type": "uint8_t",
+                    "description": "Flags (BIT(0) == SD blocks)",
+                    "display": {
+                        "fmt": "hex",
+                        "digits": 2
+                    }
+                }
+            ]
+        },
         "10": {
             "name": "ACC_2G",
             "description": "Accelerometer +-2G",
@@ -1778,6 +1840,82 @@
                     "display": {
                         "postfix": "%"
                     }
+                }
+            ]
+        },
+        "55": {
+            "name": "STATE_EVENT_SET",
+            "description": "Infuse-IoT application state transitioned from cleared to set",
+            "fields": [
+                {
+                    "name": "state",
+                    "type": "uint8_t",
+                    "description": "Infuse-IoT application event"
+                }
+            ]
+        },
+        "56": {
+            "name": "STATE_EVENT_CLEARED",
+            "description": "Infuse-IoT application state transitioned from set to cleared",
+            "fields": [
+                {
+                    "name": "state",
+                    "type": "uint8_t",
+                    "description": "Infuse-IoT application event"
+                }
+            ]
+        },
+        "57": {
+            "name": "STATE_DURATION",
+            "description": "Duration an Infuse-IoT application state was asserted for",
+            "fields": [
+                {
+                    "name": "state",
+                    "type": "uint8_t",
+                    "description": "Infuse-IoT application event"
+                },
+                {
+                    "name": "duration",
+                    "type": "uint32_t",
+                    "description": "Duration state was asserted for"
+                }
+            ]
+        },
+        "58": {
+            "name": "PCM_16BIT_CHAN_LEFT",
+            "description": "16bit PCM (Audio) data for the left channel",
+            "fields": [
+                {
+                    "name": "val",
+                    "type": "int16_t",
+                    "description": "Left channel sample"
+                }
+            ]
+        },
+        "59": {
+            "name": "PCM_16BIT_CHAN_RIGHT",
+            "description": "16bit PCM (Audio) data for the right channel",
+            "fields": [
+                {
+                    "name": "val",
+                    "type": "int16_t",
+                    "description": "Right channel sample"
+                }
+            ]
+        },
+        "60": {
+            "name": "PCM_16BIT_CHAN_DUAL",
+            "description": "16bit PCM (Audio) data for both the left and right channels",
+            "fields": [
+                {
+                    "name": "left",
+                    "type": "int16_t",
+                    "description": "Left channel sample"
+                },
+                {
+                    "name": "right",
+                    "type": "int16_t",
+                    "description": "Right channel sample"
                 }
             ]
         }
