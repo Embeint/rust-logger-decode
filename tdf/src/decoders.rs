@@ -11,6 +11,7 @@ pub fn tdf_name(tdf_id: &u16) -> String
         4 => String::from("AMBIENT_TEMPERATURE"),
         5 => String::from("TIME_SYNC"),
         6 => String::from("REBOOT_INFO"),
+        7 => String::from("ANNOUNCE_V2"),
         10 => String::from("ACC_2G"),
         11 => String::from("ACC_4G"),
         12 => String::from("ACC_8G"),
@@ -56,6 +57,12 @@ pub fn tdf_name(tdf_id: &u16) -> String
         52 => String::from("EXCEPTION_STACK_FRAME"),
         53 => String::from("BATTERY_VOLTAGE"),
         54 => String::from("BATTERY_SOC"),
+        55 => String::from("STATE_EVENT_SET"),
+        56 => String::from("STATE_EVENT_CLEARED"),
+        57 => String::from("STATE_DURATION"),
+        58 => String::from("PCM_16BIT_CHAN_LEFT"),
+        59 => String::from("PCM_16BIT_CHAN_RIGHT"),
+        60 => String::from("PCM_16BIT_CHAN_DUAL"),
         _ => format!("{}", tdf_id),
     }
 }
@@ -69,6 +76,7 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         4 => vec!["temperature"],
         5 => vec!["source","shift"],
         6 => vec!["reason","hardware_flags","count","uptime","param_1","param_2","thread"],
+        7 => vec!["application","major","minor","revision","build_num","board_crc","kv_crc","blocks","uptime","reboots","flags"],
         10 => vec!["x","y","z"],
         11 => vec!["x","y","z"],
         12 => vec!["x","y","z"],
@@ -114,6 +122,12 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         52 => vec!["frame"],
         53 => vec!["voltage"],
         54 => vec!["soc"],
+        55 => vec!["state"],
+        56 => vec!["state"],
+        57 => vec!["state","duration"],
+        58 => vec!["val"],
+        59 => vec!["val"],
+        60 => vec!["left","right"],
         _ => vec!["unknown"],
     }
 }
@@ -200,6 +214,21 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u32::<LittleEndian>()?,
                 tdf_field_read_string(cursor, 8)?,
+            )),
+        7 => 
+            Ok(format!(
+                "0x{:08x},{},{},{},0x{:08x},0x{:04x},0x{:08x},{},{},{},0x{:02x}",
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u8()?,
+                cursor.read_u8()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u32::<LittleEndian>()?,
+                cursor.read_u16::<LittleEndian>()?,
+                cursor.read_u8()?,
             )),
         10 => 
             Ok(format!(
@@ -565,6 +594,38 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             Ok(format!(
                 "{}",
                 cursor.read_u8()?,
+            )),
+        55 => 
+            Ok(format!(
+                "{}",
+                cursor.read_u8()?,
+            )),
+        56 => 
+            Ok(format!(
+                "{}",
+                cursor.read_u8()?,
+            )),
+        57 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u8()?,
+                cursor.read_u32::<LittleEndian>()?,
+            )),
+        58 => 
+            Ok(format!(
+                "{}",
+                cursor.read_i16::<LittleEndian>()?,
+            )),
+        59 => 
+            Ok(format!(
+                "{}",
+                cursor.read_i16::<LittleEndian>()?,
+            )),
+        60 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_i16::<LittleEndian>()?,
+                cursor.read_i16::<LittleEndian>()?,
             )),
         _ => {
             let mut buf = vec![0; size as usize];
