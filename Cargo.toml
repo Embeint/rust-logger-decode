@@ -14,20 +14,20 @@ path = "src/main_gui.rs"
 [dependencies]
 byteorder = "1.5.0"
 chrono = "0.4.42"
-clap = { version = "4.5.47", features = ["derive"] }
-eframe = "0.32.3"
-indicatif = "0.18.0"
+clap = { version = "4.5.53", features = ["derive"] }
+eframe = "0.33.2"
+indicatif = "0.18.3"
 itertools = "0.14.0"
 memmap = "0.7.0"
 num_cpus = "1.17.0"
 prettytable-rs = "0.10.0"
-regex = "1.11.2"
-rfd = "0.15.4"
+regex = "1.12.2"
+rfd = "0.16.0"
 tdf = { path = "tdf" }
 blocks = { path = "blocks" }
-egui_extras = "0.32.3"
+egui_extras = "0.33.2"
 directories = "6.0.0"
-image = "0.25.8"
+image = "0.25.9"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "*", features = ["winbase"] }
