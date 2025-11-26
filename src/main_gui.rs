@@ -337,6 +337,7 @@ fn draw_tdf_table(ui: &mut egui::Ui, id: Option<u64>, tdfs: &HashMap<u16, usize>
         ui.heading(format!("{:016x}", id_val));
     }
     TableBuilder::new(ui)
+        .id_salt(id)
         .column(Column::auto())
         .column(Column::auto())
         .header(5.0, |mut header| {
@@ -434,6 +435,7 @@ fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
 
             col_files.push_id(2, |ui| {
                 TableBuilder::new(ui)
+                    .id_salt("OutputFiles")
                     .striped(true)
                     .column(Column::remainder())
                     .header(5.0, |mut header| {
