@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.4.1] - 2025-11-27
+
+ - Update MacOS signing certificate
+
 ## [1.4.0] - 2025-11-26
 
  - Binary signing for MacOS
