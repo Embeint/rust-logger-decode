@@ -12,6 +12,7 @@ pub fn tdf_name(tdf_id: &u16) -> String
         5 => String::from("TIME_SYNC"),
         6 => String::from("REBOOT_INFO"),
         7 => String::from("ANNOUNCE_V2"),
+        8 => String::from("SOC_TEMPERATURE"),
         10 => String::from("ACC_2G"),
         11 => String::from("ACC_4G"),
         12 => String::from("ACC_8G"),
@@ -77,6 +78,7 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         5 => vec!["source","shift"],
         6 => vec!["reason","hardware_flags","count","uptime","param_1","param_2","thread"],
         7 => vec!["application","major","minor","revision","build_num","board_crc","kv_crc","blocks","uptime","reboots","flags"],
+        8 => vec!["temperature"],
         10 => vec!["x","y","z"],
         11 => vec!["x","y","z"],
         12 => vec!["x","y","z"],
@@ -229,6 +231,11 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u16::<LittleEndian>()?,
                 cursor.read_u8()?,
+            )),
+        8 => 
+            Ok(format!(
+                "{}",
+                cursor.read_i16::<LittleEndian>()? as f64 / 100.0,
             )),
         10 => 
             Ok(format!(
