@@ -281,7 +281,7 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
         num_workers = 1;
     }
     let blocks_per_worker = num_blocks / num_workers;
-    let trailing = num_blocks % blocks_per_worker;
+    let trailing = num_blocks - (blocks_per_worker * num_workers);
 
     args.decode_reporter.start("Decoding blocks", num_blocks);
 
