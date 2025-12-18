@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.5.0] - 2025-12-18
+
+ - Fix bug that caused a variable number of blocks at the end of a file to not be decoded
+ - Limit the number of threads used for small files
+ - Update TDF definitions
+
 ## [1.4.1] - 2025-11-27
 
  - Update MacOS signing certificate
