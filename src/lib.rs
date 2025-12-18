@@ -1,8 +1,8 @@
 use chrono::SecondsFormat;
 use itertools::Itertools;
 use memmap::Mmap;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::path::PathBuf;
@@ -275,11 +275,9 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
         (f, s)
     };
 
-    let mut num_workers = num_cpus::get();
     let num_blocks = size / blocks::BLOCK_SIZE;
-    if num_blocks < num_workers {
-        num_workers = 1;
-    }
+    let max_workers = (num_blocks / 100) + 1;
+    let num_workers = std::cmp::min(max_workers, num_cpus::get());
     let blocks_per_worker = num_blocks / num_workers;
     let trailing = num_blocks - (blocks_per_worker * num_workers);
 
