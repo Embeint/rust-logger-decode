@@ -567,6 +567,26 @@
                 }
             ]
         },
+        "8": {
+            "name": "SOC_TEMPERATURE",
+            "description": "SoC die temperature",
+            "fields": [
+                {
+                    "name": "temperature",
+                    "type": "int16_t",
+                    "description": "SoC die temperature (centidegrees)",
+                    "display": {
+                        "fmt": "float",
+                        "digits": 2,
+                        "postfix": "deg"
+                    },
+                    "conversion": {
+                        "m": 0.01,
+                        "c": 0
+                    }
+                }
+            ]
+        },
         "10": {
             "name": "ACC_2G",
             "description": "Accelerometer +-2G",
@@ -1437,7 +1457,7 @@
                 {
                     "name": "h_speed_acc",
                     "type": "uint32_t",
-                    "description": "Horizonal speed accuracy estimate",
+                    "description": "Horizontal speed accuracy estimate",
                     "display": {
                         "postfix": "m/s"
                     },
@@ -1461,7 +1481,7 @@
                 {
                     "name": "v_speed_acc",
                     "type": "uint32_t",
-                    "description": "Horizonal speed accuracy estimate",
+                    "description": "Horizontal speed accuracy estimate",
                     "display": {
                         "postfix": "m/s"
                     },
