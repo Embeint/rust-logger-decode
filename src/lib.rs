@@ -163,6 +163,7 @@ pub struct DecodeWorkerArgs {
     pub output_unix_time: bool,
     pub start_block: usize,
     pub num_blocks: usize,
+    pub block_size: usize,
 }
 
 #[derive(Clone)]
@@ -189,15 +190,18 @@ pub fn worker_run_decode<T: ProgressReporter>(mut args: DecodeWorkerArgsReporter
     // Open file
     let file = File::open(args.decode_args.input_file.clone()).unwrap();
     let mmap = unsafe { Mmap::map(&file).unwrap() };
-    let mmap_start = blocks::BLOCK_SIZE * args.decode_args.start_block;
+    let mmap_start = args.decode_args.block_size * args.decode_args.start_block;
     let mmap_end =
-        blocks::BLOCK_SIZE * (args.decode_args.start_block + args.decode_args.num_blocks);
+        args.decode_args.block_size * (args.decode_args.start_block + args.decode_args.num_blocks);
 
     // Range of the file for this worker
     let mmap_slice = &mmap[mmap_start..mmap_end];
 
     // Iterate over the blocks
-    for (index, block) in mmap_slice.chunks_exact(blocks::BLOCK_SIZE).enumerate() {
+    for (index, block) in mmap_slice
+        .chunks_exact(args.decode_args.block_size)
+        .enumerate()
+    {
         match blocks::decode_block(&mut csv_writer, block) {
             Ok(block_type) => *block_counter.entry(block_type).or_default() += 1,
             Err(_) => *block_counter.entry(blocks::BlockTypes::ERROR).or_default() += 1,
@@ -237,6 +241,7 @@ pub fn worker_run_decode<T: ProgressReporter>(mut args: DecodeWorkerArgsReporter
 
 pub struct RunArgs<T: ProgressReporter> {
     pub device_id: u64,
+    pub block_size: usize,
     pub input_files: Vec<PathBuf>,
     pub output_folder: PathBuf,
     pub output_prefix: String,
@@ -275,7 +280,7 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
         (f, s)
     };
 
-    let num_blocks = size / blocks::BLOCK_SIZE;
+    let num_blocks = size / args.block_size;
     let max_workers = (num_blocks / 100) + 1;
     let num_workers = std::cmp::min(max_workers, num_cpus::get());
     let blocks_per_worker = num_blocks / num_workers;
@@ -299,6 +304,7 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
                 output_unix_time: args.output_unix_time,
                 start_block: idx * blocks_per_worker,
                 num_blocks: num,
+                block_size: args.block_size,
             },
             block_stats: stats_block.clone(),
             tdf_stats: stats_tdf.clone(),
