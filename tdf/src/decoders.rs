@@ -642,6 +642,15 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
     };
     let cursor_end = cursor.position();
     let cursor_read = cursor_end - cursor_start;
+
+    if (size as u64) < cursor_read {
+        // Hande read overflow (more data read than specified)
+        return Result::Err(Error::new(
+            ErrorKind::InvalidData,
+            "Read overflow, corrupt data/metadata",
+        ));
+    }
+
     let underflow = size as u64 - cursor_read;
 
     // Handle read underflow (more data specified than expected)
