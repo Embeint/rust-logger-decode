@@ -283,6 +283,7 @@ fn start_button(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
 
         let mut run_args = infuse_decoder::RunArgs {
             device_id: app.device_id,
+            block_size: blocks::DEFAULT_BLOCK_SIZE,
             input_files: files,
             output_folder: app.output_folder.clone(),
             output_prefix: app.output_prefix.clone(),

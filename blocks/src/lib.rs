@@ -1,7 +1,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use tdf::TdfOutput;
 
-pub const BLOCK_SIZE: usize = 512;
+pub const DEFAULT_BLOCK_SIZE: usize = 512;
 
 #[derive(Hash, Copy, Clone, PartialEq, Eq)]
 pub enum BlockTypes {

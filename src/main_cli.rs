@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 #[macro_use]
 extern crate prettytable;
-use prettytable::{format, Table};
+use prettytable::{Table, format};
 
 #[derive(Clone)]
 pub struct IndicatifProgress {
@@ -101,6 +101,7 @@ fn main() -> io::Result<()> {
 
         let mut run_args = infuse_decoder::RunArgs {
             device_id: *device_id,
+            block_size: blocks::DEFAULT_BLOCK_SIZE,
             input_files: files.clone(),
             output_folder: args.output.clone(),
             output_prefix: output_prefix,
