@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.6.0] - 2026-01-16
+
+ - Fix GUI crash on certain types of invalid data
+ - Block size for decoding can now be configured
+
 ## [1.5.0] - 2025-12-18
 
  - Fix bug that caused a variable number of blocks at the end of a file to not be decoded
