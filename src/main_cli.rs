@@ -59,6 +59,8 @@ struct Cli {
     /// Verbose CLI output
     #[arg(short, long)]
     verbose: bool,
+    #[arg(long, default_value_t = infuse_decoder::args::BlockSizeOptions::B512)]
+    block_size: infuse_decoder::args::BlockSizeOptions,
 }
 
 fn main() -> io::Result<()> {
@@ -101,7 +103,7 @@ fn main() -> io::Result<()> {
 
         let mut run_args = infuse_decoder::RunArgs {
             device_id: *device_id,
-            block_size: blocks::DEFAULT_BLOCK_SIZE,
+            block_size: args.block_size as usize,
             input_files: files.clone(),
             output_folder: args.output.clone(),
             output_prefix: output_prefix,
