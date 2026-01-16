@@ -10,6 +10,8 @@ use egui_extras::{Column, TableBuilder};
 use image::GenericImageView;
 use rfd::FileDialog;
 
+use infuse_decoder::args::BlockSizeOptions;
+
 #[derive(PartialEq)]
 enum TimeOutput {
     UNIX,
@@ -77,6 +79,7 @@ impl infuse_decoder::ProgressReporter for SliderState {
 struct MyApp {
     time_mode: TimeOutput,
     device_id: u64,
+    block_size: BlockSizeOptions,
     input_path: Option<PathBuf>,
     input_files: Option<HashMap<u64, Vec<PathBuf>>>,
     output_folder: PathBuf,
@@ -121,6 +124,7 @@ impl Default for MyApp {
         Self {
             time_mode: TimeOutput::UTC,
             device_id: 0,
+            block_size: BlockSizeOptions::B512,
             input_path: None,
             input_files: None,
             output_folder: default_out.unwrap(),
@@ -236,18 +240,31 @@ fn core_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
 }
 
 fn decode_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
-    ui.vertical(|ui| {
-        ui.label("Time Output Format");
-        ui.radio_value(
-            &mut app.time_mode,
-            TimeOutput::UTC,
-            "UTC  (2020-01-01T00:00:00.000000Z)",
-        );
-        ui.radio_value(
-            &mut app.time_mode,
-            TimeOutput::UNIX,
-            "UNIX (1577800800.000000)",
-        );
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.label("Time Output Format");
+            ui.radio_value(
+                &mut app.time_mode,
+                TimeOutput::UTC,
+                "UTC  (2020-01-01T00:00:00.000000Z)",
+            );
+            ui.radio_value(
+                &mut app.time_mode,
+                TimeOutput::UNIX,
+                "UNIX (1577800800.000000)",
+            );
+        });
+        ui.separator();
+        ui.vertical(|ui| {
+            ui.label("Block Size");
+            egui::ComboBox::from_id_salt("Block Size")
+                .selected_text(format!("{:}", app.block_size))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut app.block_size, BlockSizeOptions::B512, "512");
+                    ui.selectable_value(&mut app.block_size, BlockSizeOptions::B4096, "4096");
+                });
+        });
+        ui.separator();
     });
 }
 
@@ -283,7 +300,7 @@ fn start_button(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
 
         let mut run_args = infuse_decoder::RunArgs {
             device_id: app.device_id,
-            block_size: blocks::DEFAULT_BLOCK_SIZE,
+            block_size: app.block_size as usize,
             input_files: files,
             output_folder: app.output_folder.clone(),
             output_prefix: app.output_prefix.clone(),
