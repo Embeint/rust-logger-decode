@@ -11,6 +11,7 @@ use std::thread;
 
 use tdf::TdfOutput;
 
+pub mod args;
 pub mod fs_util;
 
 pub trait ProgressReporter {
