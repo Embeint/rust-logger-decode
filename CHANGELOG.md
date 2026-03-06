@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.7.0] - 2026-xx-xx
+
+ - Add button to open output folder in system viewer
+
 ## [1.6.0] - 2026-01-16
 
  - Fix GUI crash on certain types of invalid data
