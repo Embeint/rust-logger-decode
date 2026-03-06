@@ -149,6 +149,41 @@ fn trimmed_label(label: &String, max_len: usize) -> String {
     }
 }
 
+pub fn open_in_native_browser(path: &std::path::Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+    if !path.is_dir() {
+        return Err(format!("Path is not a directory: {}", path.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 fn core_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
     egui::Grid::new("folder_selection")
         .num_columns(2)
@@ -156,14 +191,19 @@ fn core_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
             let folder_str = app.output_folder.display().to_string();
             ui.label("Output folder");
             ui.label(egui::RichText::new(trimmed_label(&folder_str, 48)).code());
-            if ui.button("Folder").clicked() {
-                if let Some(folder) = FileDialog::new()
-                    .set_directory(app.output_folder.as_path())
-                    .pick_folder()
-                {
-                    app.output_folder = folder;
+            ui.horizontal(|ui| {
+                if ui.button("Folder").clicked() {
+                    if let Some(folder) = FileDialog::new()
+                        .set_directory(app.output_folder.as_path())
+                        .pick_folder()
+                    {
+                        app.output_folder = folder;
+                    }
                 }
-            }
+                if ui.button("Open").clicked() {
+                    let _ = open_in_native_browser(app.output_folder.as_path());
+                };
+            });
             ui.end_row();
 
             let folder_str = match app.input_path.as_ref() {
