@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
-## [1.7.0] - 2026-xx-xx
+## [1.7.0] - 2026-04-14
 
  - Add button to open output folder in system viewer
+ - Fix decoding of ANNOTATION TDF
+ - Update TDF definitions
 
 ## [1.6.0] - 2026-01-16
 
