@@ -64,6 +64,7 @@ pub fn tdf_name(tdf_id: &u16) -> String
         58 => String::from("PCM_16BIT_CHAN_LEFT"),
         59 => String::from("PCM_16BIT_CHAN_RIGHT"),
         60 => String::from("PCM_16BIT_CHAN_DUAL"),
+        61 => String::from("KVS_VALUE_CHANGED"),
         _ => format!("{}", tdf_id),
     }
 }
@@ -130,6 +131,7 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
         58 => vec!["val"],
         59 => vec!["val"],
         60 => vec!["left","right"],
+        61 => vec!["key","value"],
         _ => vec!["unknown"],
     }
 }
@@ -477,7 +479,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
         35 => 
             Ok(format!(
                 "0x{:012x},{},{}",
-                cursor.read_u48::<LittleEndian>()?,
+                cursor.read_u48::<BigEndian>()?,
                 cursor.read_u8()?,
                 cursor.read_i8()?,
             )),
@@ -521,7 +523,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             )),
         39 => 
             Ok(format!(
-                "{},{}",
+                "0x{:016x},{}",
                 cursor.read_u64::<LittleEndian>()?,
                 cursor.read_i8()?,
             )),
@@ -645,6 +647,12 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 "{},{}",
                 cursor.read_i16::<LittleEndian>()?,
                 cursor.read_i16::<LittleEndian>()?,
+            )),
+        61 => 
+            Ok(format!(
+                "{},{}",
+                cursor.read_u16::<LittleEndian>()?,
+                tdf_field_read_vla(cursor, cursor_start, size)?,
             )),
         _ => {
             let mut buf = vec![0; size as usize];
