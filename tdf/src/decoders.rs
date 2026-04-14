@@ -134,18 +134,7 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
     }
 }
 
-fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, size: u8) ->  Result<String>
-{
-    let mut buf = vec![0u8; size as usize];
-    cursor.read_exact(&mut buf)?;
-
-    match String::from_utf8(buf) {
-        Ok(val) => Ok(format!("\"{}\"", val.trim_matches(char::from(0)))),
-        Err(..) => Ok(String::from("\"\""))
-    }
-}
-
-fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  Result<String>
+fn vla_bytes_remaining(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) -> Result<usize>
 {
     let cursor_current = cursor.position();
     let cursor_read = cursor_current - cursor_start;
@@ -156,7 +145,30 @@ fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) -
         ));
     }
     let bytes_remaining = size as u64 - cursor_read;
-    let mut buf = vec![0u8; bytes_remaining as usize];
+
+    Ok(bytes_remaining as usize)
+}
+
+fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, cursor_start: u64, num: u8, size: u8) ->  Result<String>
+{
+    let string_length = match num {
+        0 => vla_bytes_remaining(cursor, cursor_start, size)?,
+        _ => size as usize,
+    };
+
+    let mut buf = vec![0u8; string_length];
+    cursor.read_exact(&mut buf)?;
+
+    match String::from_utf8(buf) {
+        Ok(val) => Ok(format!("\"{}\"", val.trim_matches(char::from(0)))),
+        Err(..) => Ok(String::from("\"\""))
+    }
+}
+
+fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  Result<String>
+{
+    let bytes_remaining = vla_bytes_remaining(cursor, cursor_start, size)?;
+    let mut buf = vec![0u8; bytes_remaining];
 
     cursor.read_exact(&mut buf)?;
     Ok(format!("{}", hex::encode(buf)))
@@ -215,7 +227,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u32::<LittleEndian>()?,
                 cursor.read_u32::<LittleEndian>()?,
-                tdf_field_read_string(cursor, 8)?,
+                tdf_field_read_string(cursor, cursor_start, 8, size)?,
             )),
         7 => 
             Ok(format!(
@@ -532,7 +544,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
             Ok(format!(
                 "{},{}",
                 cursor.read_u32::<LittleEndian>()?,
-                tdf_field_read_string(cursor, 0)?,
+                tdf_field_read_string(cursor, cursor_start, 0, size)?,
             )),
         44 => 
             Ok(format!(
@@ -655,7 +667,7 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
 
     // Handle read underflow (more data specified than expected)
     if underflow > 0 {
-        tdf_field_read_string(cursor, underflow as u8)?;
+        tdf_field_read_string(cursor, cursor_start, 0, underflow as u8)?;
     }
     res
 }
