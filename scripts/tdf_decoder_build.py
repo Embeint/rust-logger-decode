@@ -77,10 +77,15 @@ def decoders_gen(tdf_defs, output):
 
         if "num" in field:
             if field["type"] == "char":
-                return [(n, f"tdf_field_read_string(cursor, {field['num']})?")]
+                return [
+                    (
+                        n,
+                        f"tdf_field_read_string(cursor, cursor_start, {field['num']}, size)?",
+                    )
+                ]
             else:
                 if field["num"] == 0:
-                    return [(n, f"tdf_field_read_vla(cursor, cursor_start, size)?")]
+                    return [(n, "tdf_field_read_vla(cursor, cursor_start, size)?")]
                 else:
                     return [(n + f"[{idx}]", func) for idx in range(field["num"])]
         else:
