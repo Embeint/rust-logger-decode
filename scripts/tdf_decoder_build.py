@@ -11,19 +11,20 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 # C type: (rust_type, ::<LittleEndian>?)
 rust_type = {
-    'char': ('u8', False),
-    'int8_t': ('i8', False),
-    'uint8_t': ('u8', False),
-    'int16_t': ('i16', True),
-    'uint16_t': ('u16', True),
-    'int32_t': ('i32', True),
-    'uint32_t': ('u32', True),
-    'int64_t': ('i64', True),
-    'uint64_t': ('u64', True),
-    'float': ('f32', True),
-    'float32_t': ('f32', True),
-    'float64_t': ('f64', True),
+    "char": ("u8", False),
+    "int8_t": ("i8", False),
+    "uint8_t": ("u8", False),
+    "int16_t": ("i16", True),
+    "uint16_t": ("u16", True),
+    "int32_t": ("i32", True),
+    "uint32_t": ("u32", True),
+    "int64_t": ("i64", True),
+    "uint64_t": ("u64", True),
+    "float": ("f32", True),
+    "float32_t": ("f32", True),
+    "float64_t": ("f64", True),
 }
+
 
 def decoders_gen(tdf_defs, output):
     env = Environment(
@@ -35,30 +36,30 @@ def decoders_gen(tdf_defs, output):
     tdf_template = env.get_template("tdf_decoder.rs.jinja")
 
     def field_conv_func(field, name_prefix=None):
-        t = rust_type[field['type']]
+        t = rust_type[field["type"]]
         func = f"cursor.read_{t[0]}"
         if t[1]:
             func += "::<LittleEndian>"
         func += "()?"
-        if c := field.get('conversion'):
-            if endian := c.get('int', None):
-                assert 'num' in field
-                assert t[0] == 'u8'
-                e = 'LittleEndian' if endian == 'little' else 'BigEndian'
-                if field['num'] == 3:
-                    t = 'u24'
-                elif field['num'] == 6:
-                    t = 'u48'
+        if c := field.get("conversion"):
+            if endian := c.get("int", None):
+                assert "num" in field
+                assert t[0] == "u8"
+                e = "LittleEndian" if endian == "little" else "BigEndian"
+                if field["num"] == 3:
+                    t = "u24"
+                elif field["num"] == 6:
+                    t = "u48"
                 else:
                     raise RuntimeError("Unknown integer length")
 
                 func = f"cursor.read_{t}::<{e}>()?"
-                del field['num']
+                del field["num"]
 
-            if 'm' in c or 'c' in c:
-                func += ' as f64'
-                if 'm' in c and c['m'] != 0:
-                    val = c['m']
+            if "m" in c or "c" in c:
+                func += " as f64"
+                if "m" in c and c["m"] != 0:
+                    val = c["m"]
                     inverse_ratio = (1 / val).as_integer_ratio()
                     # If number can be represented as a whole number division, use that
                     # instead for numerical stability (/ 10) is better than (* 0.1) as
@@ -67,81 +68,78 @@ def decoders_gen(tdf_defs, output):
                         func += f" / {inverse_ratio[0]}.0"
                     else:
                         func += f" * {float_format(c['m'])}"
-                if 'c' in c and c['c'] != 0:
+                if "c" in c and c["c"] != 0:
                     func += f" + {float_format(c['c'])}"
 
-        n = field['name']
+        n = field["name"]
         if name_prefix is not None:
             n = f"{name_prefix}." + n
 
-        if 'num' in field:
-            if field['type'] == 'char':
+        if "num" in field:
+            if field["type"] == "char":
                 return [(n, f"tdf_field_read_string(cursor, {field['num']})?")]
             else:
-                if field['num'] == 0:
+                if field["num"] == 0:
                     return [(n, f"tdf_field_read_vla(cursor, cursor_start, size)?")]
                 else:
-                    return [(n + f'[{idx}]', func) for idx in range(field['num'])]
+                    return [(n + f"[{idx}]", func) for idx in range(field["num"])]
         else:
             return [(n, func)]
 
     def field_fmt(field):
-        if field['type'] == 'char':
+        if field["type"] == "char":
             return ["{}"]
-        if 'display' in field and field['display'].get('fmt', '') == "hex":
-            if digits := field['display'].get('digits', None):
+        if "display" in field and field["display"].get("fmt", "") == "hex":
+            if digits := field["display"].get("digits", None):
                 single = [f"0x{{:0{digits}x}}"]
             else:
                 single = ["0x{:x}"]
         else:
             single = ["{}"]
-        if field.get('num', None) == 0:
+        if field.get("num", None) == 0:
             return ["{}"]
-        return single * field.get('num', 1)
-
+        return single * field.get("num", 1)
 
     structs = {}
     struct_fmts = {}
-    for name, struct in tdf_defs['structs'].items():
+    for name, struct in tdf_defs["structs"].items():
         funcs = []
         fmts = []
-        for f in struct['fields']:
+        for f in struct["fields"]:
             funcs += field_conv_func(f)
             fmts += field_fmt(f)
         structs[f"struct {name}"] = funcs
         struct_fmts[f"struct {name}"] = fmts
 
     # Generate rust conversion functions
-    for tdf_id, info in tdf_defs['definitions'].items():
-        info['rust_convs'] = []
+    for tdf_id, info in tdf_defs["definitions"].items():
+        info["rust_convs"] = []
         fmt = []
-        for f in info['fields']:
-            if f['type'] in structs:
-                info['rust_convs'] += structs[f['type']]
-                fmt += struct_fmts[f['type']]
-            elif f['type'] in rust_type:
-                info['rust_convs'] += field_conv_func(f)
+        for f in info["fields"]:
+            if f["type"] in structs:
+                info["rust_convs"] += structs[f["type"]]
+                fmt += struct_fmts[f["type"]]
+            elif f["type"] in rust_type:
+                info["rust_convs"] += field_conv_func(f)
                 fmt += field_fmt(f)
             else:
                 raise RuntimeError(f"Bad type '{f['type']}'")
 
-        info['rust_head'] = ",".join([f"\"{c[0]}\"" for c in info['rust_convs']])
-        info['rust_fmt'] = ",".join(fmt)
+        info["rust_head"] = ",".join([f'"{c[0]}"' for c in info["rust_convs"]])
+        info["rust_fmt"] = ",".join(fmt)
 
-
-    tdf_output = pathlib.Path(output) / 'decoders.rs'
+    tdf_output = pathlib.Path(output) / "decoders.rs"
     with tdf_output.open("w") as f:
         f.write(
             tdf_template.render(
-                    structs=tdf_defs["structs"], definitions=tdf_defs["definitions"]
+                structs=tdf_defs["structs"], definitions=tdf_defs["definitions"]
             )
         )
         f.write(os.linesep)
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        "Generate rust TDF decoders", allow_abbrev=False
-    )
+    parser = argparse.ArgumentParser("Generate rust TDF decoders", allow_abbrev=False)
     parser.add_argument("--json", required=True, type=str, help="TDF json description")
     parser.add_argument("--out", required=True, type=str, help="Output folder")
     args = parser.parse_args()
