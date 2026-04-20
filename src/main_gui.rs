@@ -184,7 +184,7 @@ pub fn open_in_native_browser(path: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-fn core_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
+fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
     egui::Grid::new("folder_selection")
         .num_columns(2)
         .show(ui, |ui| {
@@ -279,7 +279,7 @@ fn core_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
         });
 }
 
-fn decode_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
+fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label("Time Output Format");
@@ -308,7 +308,7 @@ fn decode_options(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
     });
 }
 
-fn start_button(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
+fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
     let start_button = egui::Button::new("DECODE")
         .fill(egui::Color32::from_rgb(0, 0x89, 0x47))
         .min_size((100.0, ui.available_height()).into());
@@ -355,7 +355,7 @@ fn start_button(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui) {
     };
 }
 
-fn copyright_bar(_ctx: &egui::Context, ui: &mut egui::Ui) {
+fn copyright_bar(ui: &mut egui::Ui) {
     egui::Grid::new("copyright_bar")
         .num_columns(2)
         .show(ui, |ui| {
@@ -430,8 +430,8 @@ fn draw_tdf_table(ui: &mut egui::Ui, id: Option<u64>, tdfs: &HashMap<u16, usize>
         });
 }
 
-fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
-    egui::CentralPanel::default().show(ctx, |ui| {
+fn gui_stats(app: &mut MyApp, ui: &mut egui::Ui) {
+    egui::CentralPanel::default().show_inside(ui, |ui| {
         ui.columns_const(|[col_blocks, col_tdfs, col_files]| {
             col_blocks.push_id(0, |ui| {
                 draw_right_edge(ui, 1.0, egui::Color32::GRAY);
@@ -525,7 +525,7 @@ fn gui_stats(app: &mut MyApp, ctx: &egui::Context) {
 }
 
 impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Check if executing work has completed
         if let Some(handle) = self.runner_thread.as_ref() {
             if handle.is_finished() {
@@ -542,23 +542,23 @@ impl eframe::App for MyApp {
                 }
             }
             // Decoding is running, request periodic repaints
-            ctx.request_repaint_after(core::time::Duration::from_millis(100));
+            ui.request_repaint_after(core::time::Duration::from_millis(100));
         }
 
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::Panel::top("top_panel").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
-                core_options(self, ctx, ui);
-                start_button(self, ctx, ui);
+                core_options(self, ui);
+                start_button(self, ui);
             });
             ui.separator();
-            decode_options(self, ctx, ui);
+            decode_options(self, ui);
         });
 
-        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            copyright_bar(ctx, ui);
+        egui::Panel::bottom("bottom_panel").show_inside(ui, |ui| {
+            copyright_bar(ui);
         });
 
-        egui::TopBottomPanel::top("progress_panel").show(ctx, |ui| {
+        egui::Panel::top("progress_panel").show_inside(ui, |ui| {
             ui.add_space(5.0);
             egui::Grid::new("progress_bars")
                 .num_columns(2)
@@ -572,7 +572,7 @@ impl eframe::App for MyApp {
                 });
             ui.add_space(5.0);
         });
-        gui_stats(self, ctx);
+        gui_stats(self, ui);
     }
 }
 

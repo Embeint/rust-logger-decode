@@ -15,7 +15,7 @@ path = "src/main_gui.rs"
 byteorder = "1.5.0"
 chrono = "0.4.42"
 clap = { version = "4.5.53", features = ["derive"] }
-eframe = "0.33.2"
+eframe = "0.34.1"
 indicatif = "0.18.3"
 itertools = "0.14.0"
 memmap = "0.7.0"
@@ -25,7 +25,7 @@ regex = "1.12.2"
 rfd = "0.16.0"
 tdf = { path = "tdf" }
 blocks = { path = "blocks" }
-egui_extras = "0.33.2"
+egui_extras = "0.34.1"
 directories = "6.0.0"
 image = "0.25.9"
 
