@@ -345,7 +345,18 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
             tdf::decoders::tdf_name(tdf_id)
         ));
         output_files.push(output_path.clone());
-        let mut output = BufWriter::new(File::create(output_path)?);
+        let err_path = output_path.clone();
+        let output_file = File::create(output_path).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to create output file '{}': {}",
+                    err_path.display(),
+                    e
+                ),
+            )
+        })?;
+        let mut output = BufWriter::new(output_file);
         let mut write_headings = true;
 
         for worker in worker_outputs.keys().sorted() {
