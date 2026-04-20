@@ -80,6 +80,7 @@ struct MyApp {
     time_mode: TimeOutput,
     device_id: u64,
     block_size: BlockSizeOptions,
+    error_msg: Option<String>,
     input_path: Option<PathBuf>,
     input_files: Option<HashMap<u64, Vec<PathBuf>>>,
     output_folder: PathBuf,
@@ -125,6 +126,7 @@ impl Default for MyApp {
             time_mode: TimeOutput::UTC,
             device_id: 0,
             block_size: BlockSizeOptions::B512,
+            error_msg: None,
             input_path: None,
             input_files: None,
             output_folder: default_out.unwrap(),
@@ -538,11 +540,28 @@ impl eframe::App for MyApp {
                         self.tdf_stats = Some(tdf_stats);
                         self.output_files = Some(files);
                     }
-                    _ => {}
+                    Err(e) => {
+                        self.error_msg = Some(format!("{e:?}"));
+                    }
                 }
             }
             // Decoding is running, request periodic repaints
             ui.request_repaint_after(core::time::Duration::from_millis(100));
+        }
+
+        if let Some(msg) = &self.error_msg.clone() {
+            egui::Window::new("Decoding Error")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ui.ctx(), |ui| {
+                    ui.label(msg);
+                    ui.add_space(8.0);
+                    if ui.button("OK").clicked() {
+                        self.error_msg = None;
+                    }
+                });
+            println!();
         }
 
         egui::Panel::top("top_panel").show_inside(ui, |ui| {
