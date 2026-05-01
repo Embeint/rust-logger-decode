@@ -86,6 +86,12 @@ impl TdfOutput for TdfCsvWriter {
                 let heading = tdf::decoders::tdf_fields(&tdf_id).join(",");
                 writer.write_all(format!("time,{}\n", heading).as_bytes())?;
 
+                // Touch the count variable in case the decoding fails
+                *self
+                    .output_cnt
+                    .entry((remote_id, tdf_id.to_owned()))
+                    .or_default() += 0;
+
                 // Insert into hashmap and return
                 v.insert((path, writer))
             }
