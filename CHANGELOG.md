@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.8.0] - 2026-05-01
+
+ - Fix decoding of constant length strings (Introduced in `1.7.0`)
+ - Fix temporary decoding files potentially being left on the filesystem
+
 ## [1.7.0] - 2026-04-14
 
  - Add button to open output folder in system viewer
