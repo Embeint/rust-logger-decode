@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.8.1] - 2026-06-05
+
+ - MacOS GUI distributed as notorized `.dmg`
+
 ## [1.8.0] - 2026-05-01
 
  - Fix decoding of constant length strings (Introduced in `1.7.0`)
