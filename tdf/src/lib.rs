@@ -5,6 +5,7 @@ use std::io::{Cursor, ErrorKind, Read};
 
 pub mod decoders;
 pub mod decoders_csv;
+pub mod decoders_parquet;
 pub mod time;
 
 const TDF_TIME_MASK: u16 = 0xC000;
