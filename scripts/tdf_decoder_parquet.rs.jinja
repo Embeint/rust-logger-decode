@@ -1,0 +1,34 @@
+use std::sync::Arc;
+
+use arrow_schema::{DataType, Field, Fields, Schema, TimeUnit};
+
+fn timestamp_field() -> Field {
+    Field::new(
+        "timestamp",
+        DataType::Timestamp(TimeUnit::Microsecond, Some("+00:00".into())),
+        false,
+    )
+}
+
+pub fn tdf_parquet_schemas() -> Vec<(u16, &'static str, Schema)>
+{
+    vec![
+{% for tdf_id, info in definitions.items() %}
+        (
+            {{ tdf_id }},
+            "{{ info['name'] }}",
+            tdf_parquet_schema(&{{ tdf_id }}).unwrap(),
+        ),
+{% endfor %}
+    ]
+}
+
+pub fn tdf_parquet_schema(tdf_id: &u16) -> Option<Schema>
+{
+    match tdf_id {
+{% for tdf_id, info in definitions.items() %}
+        {{ tdf_id }} => Some({{ info['arrow_schema'] }}),
+{% endfor %}
+        _ => None,
+    }
+}

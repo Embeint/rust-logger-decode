@@ -5,6 +5,7 @@ import decimal
 import json
 import os
 import pathlib
+import re
 from numpy import format_float_positional as float_format
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -25,6 +26,141 @@ rust_type = {
     "float64_t": ("f64", True),
 }
 
+arrow_int_type = {
+    "int8_t": "DataType::Int8",
+    "uint8_t": "DataType::UInt8",
+    "int16_t": "DataType::Int16",
+    "uint16_t": "DataType::UInt16",
+    "int32_t": "DataType::Int32",
+    "uint32_t": "DataType::UInt32",
+    "int64_t": "DataType::Int64",
+    "uint64_t": "DataType::UInt64",
+}
+
+arrow_float_type = {
+    "float": "DataType::Float32",
+    "float32_t": "DataType::Float32",
+    "float64_t": "DataType::Float64",
+}
+
+
+def rust_str(value):
+    return json.dumps(value)
+
+
+def arrow_name(name):
+    name = re.sub(r"\W", "_", name)
+    if not name or name[0].isdigit():
+        name = f"_{name}"
+    return name
+
+
+def indent_block(value, indent):
+    pad = " " * indent
+    return "\n".join(f"{pad}{line}" for line in value.splitlines())
+
+
+def arrow_scalar_type(field):
+    c_type = field["type"]
+    conv = field.get("conversion", {})
+
+    if c_type == "char":
+        return "DataType::Utf8"
+
+    if "m" in conv or "c" in conv:
+        return "DataType::Float64"
+
+    if "int" in conv:
+        assert "num" in field
+        byte_len = field["num"]
+        if byte_len <= 1:
+            return "DataType::UInt8"
+        if byte_len <= 2:
+            return "DataType::UInt16"
+        if byte_len <= 4:
+            return "DataType::UInt32"
+        if byte_len <= 8:
+            return "DataType::UInt64"
+        return f"DataType::FixedSizeBinary({byte_len})"
+
+    if c_type in arrow_int_type:
+        return arrow_int_type[c_type]
+
+    if c_type in arrow_float_type:
+        return arrow_float_type[c_type]
+
+    raise RuntimeError(f"Bad type '{c_type}'")
+
+
+def arrow_data_type_expr(field, structs, indent):
+    c_type = field["type"]
+    conv = field.get("conversion", {})
+
+    if c_type.startswith("struct "):
+        struct_name = c_type.removeprefix("struct ")
+        if struct_name not in structs:
+            raise RuntimeError(f"Bad type '{c_type}'")
+        nested = ",\n".join(
+            arrow_field_expr(nested, structs, indent + 8)
+            for nested in structs[struct_name]["fields"]
+        )
+        base = "DataType::Struct(Fields::from(vec![\n"
+        base += f"{indent_block(nested, indent + 4)}\n"
+        base += f"{' ' * indent}]))"
+    else:
+        base = arrow_scalar_type(field)
+
+    if "num" not in field or field["type"] == "char" or "int" in conv:
+        return base
+
+    num = field["num"]
+    if num == 0:
+        if c_type == "uint8_t":
+            return "DataType::Binary"
+        return (
+            "DataType::List(Arc::new(Field::new_list_field(\n"
+            f"{indent_block(base, indent + 4)},\n"
+            f"{' ' * (indent + 4)}false,\n"
+            f"{' ' * indent})))"
+        )
+
+    if c_type == "uint8_t":
+        return f"DataType::FixedSizeList(Arc::new(Field::new_list_field(DataType::UInt8, false)), {num})"
+    return (
+        "DataType::FixedSizeList(Arc::new(Field::new_list_field(\n"
+        f"{indent_block(base, indent + 4)},\n"
+        f"{' ' * (indent + 4)}false,\n"
+        f"{' ' * indent})), "
+        f"{num})"
+    )
+
+
+def arrow_field_expr(field, structs, indent):
+    field_name = rust_str(arrow_name(field["name"]))
+    data_type = arrow_data_type_expr(field, structs, indent + 4)
+    if "\n" not in data_type:
+        return f"Field::new({field_name}, {data_type}, false)"
+    return (
+        "Field::new(\n"
+        f"{' ' * (indent + 4)}{field_name},\n"
+        f"{indent_block(data_type, indent + 4)},\n"
+        f"{' ' * (indent + 4)}false,\n"
+        f"{' ' * indent})"
+    )
+
+
+def arrow_schema_expr(info, structs):
+    fields = ",\n".join(
+        arrow_field_expr(field, structs, 12) for field in info["fields"]
+    )
+    return (
+        "Schema::new(vec![\n"
+        + indent_block("timestamp_field(),", 8)
+        + "\n"
+        + indent_block(fields, 8)
+        + "\n    ])"
+    )
+
 
 def decoders_gen(tdf_defs, output):
     env = Environment(
@@ -35,6 +171,10 @@ def decoders_gen(tdf_defs, output):
     )
     common_template = env.get_template("tdf_decoder.rs.jinja")
     csv_template = env.get_template("tdf_decoder_csv.rs.jinja")
+    parquet_template = env.get_template("tdf_decoder_parquet.rs.jinja")
+
+    for _tdf_id, info in tdf_defs["definitions"].items():
+        info["arrow_schema"] = arrow_schema_expr(info, tdf_defs["structs"])
 
     def field_conv_func(field, name_prefix=None):
         t = rust_type[field["type"]]
@@ -138,19 +278,19 @@ def decoders_gen(tdf_defs, output):
 
     common_output = pathlib.Path(output) / "decoders.rs"
     csv_output = pathlib.Path(output) / "decoders_csv.rs"
-    with common_output.open("w") as f:
-        rendered = common_template.render(
-            structs=tdf_defs["structs"], definitions=tdf_defs["definitions"]
-        )
-        f.write(rendered)
-        f.write(os.linesep)
+    parquet_output = pathlib.Path(output) / "decoders_parquet.rs"
 
-    with csv_output.open("w") as f:
-        rendered = csv_template.render(
-            structs=tdf_defs["structs"], definitions=tdf_defs["definitions"]
-        )
-        f.write(rendered)
-        f.write(os.linesep)
+    def write_rendered(path, template):
+        with path.open("w", newline="\n") as f:
+            rendered = template.render(
+                structs=tdf_defs["structs"], definitions=tdf_defs["definitions"]
+            )
+            f.write(rendered)
+            f.write(os.linesep)
+
+    write_rendered(common_output, common_template)
+    write_rendered(csv_output, csv_template)
+    write_rendered(parquet_output, parquet_template)
 
 
 if __name__ == "__main__":
