@@ -83,7 +83,7 @@ impl TdfOutput for TdfCsvWriter {
                 let mut writer = std::io::BufWriter::new(std::fs::File::create(path.clone())?);
 
                 // Write header into file
-                let heading = tdf::decoders::tdf_fields(&tdf_id).join(",");
+                let heading = tdf::decoders_csv::tdf_fields(&tdf_id).join(",");
                 writer.write_all(format!("time,{}\n", heading).as_bytes())?;
 
                 // Touch the count variable in case the decoding fails
@@ -98,7 +98,7 @@ impl TdfOutput for TdfCsvWriter {
         };
 
         // Construct CSV line
-        let reading = tdf::decoders::tdf_read_into_str(&tdf_id, size, cursor)?;
+        let reading = tdf::decoders_csv::tdf_read_into_str(&tdf_id, size, cursor)?;
         let time = match tdf_idx {
             Some(idx) => {
                 // Use the index directly if provided

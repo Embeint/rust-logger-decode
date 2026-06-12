@@ -1,7 +1,5 @@
 use std::io::{Cursor, Read, Result, Error, ErrorKind};
 
-use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
-
 pub fn tdf_name(tdf_id: &u16) -> String
 {
     match tdf_id {
@@ -12,17 +10,7 @@ pub fn tdf_name(tdf_id: &u16) -> String
     }
 }
 
-pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str>
-{
-    match tdf_id {
-{% for tdf_id, info in definitions.items() %}
-        {{ tdf_id }} => vec![{{ info['rust_head'] }}],
-{% endfor %}
-        _ => vec!["unknown"],
-    }
-}
-
-fn vla_bytes_remaining(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) -> Result<usize>
+pub fn vla_bytes_remaining(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) -> Result<usize>
 {
     let cursor_current = cursor.position();
     let cursor_read = cursor_current - cursor_start;
@@ -37,7 +25,7 @@ fn vla_bytes_remaining(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) 
     Ok(bytes_remaining as usize)
 }
 
-fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, cursor_start: u64, num: u8, size: u8) ->  Result<String>
+pub fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, cursor_start: u64, num: u8, size: u8) ->  Result<Vec<u8>>
 {
     let string_length = match num {
         0 => vla_bytes_remaining(cursor, cursor_start, size)?,
@@ -47,57 +35,14 @@ fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, cursor_start: u64, num: u8,
     let mut buf = vec![0u8; string_length];
     cursor.read_exact(&mut buf)?;
 
-    match String::from_utf8(buf) {
-        Ok(val) => Ok(format!("\"{}\"", val.trim_matches(char::from(0)))),
-        Err(..) => Ok(String::from("\"\""))
-    }
+    Ok(buf)
 }
 
-fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  Result<String>
+pub fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  Result<Vec<u8>>
 {
     let bytes_remaining = vla_bytes_remaining(cursor, cursor_start, size)?;
     let mut buf = vec![0u8; bytes_remaining];
 
     cursor.read_exact(&mut buf)?;
-    Ok(format!("{}", hex::encode(buf)))
-}
-
-pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> Result<String>
-{
-    let cursor_start = cursor.position();
-
-    let res = match tdf_id {
-{% for tdf_id, info in definitions.items() %}
-        {{ tdf_id }} =>
-            Ok(format!(
-                "{{ info['rust_fmt'] }}",
-{% for conv in info['rust_convs'] %}
-                {{ conv[1] }},
-{% endfor %}
-            )),
-{% endfor %}
-        _ => {
-            let mut buf = vec![0; size as usize];
-            cursor.read_exact(&mut buf)?;
-            Ok(format!("{}", hex::encode(buf)))
-        }
-    };
-    let cursor_end = cursor.position();
-    let cursor_read = cursor_end - cursor_start;
-
-    if (size as u64) < cursor_read {
-        // Hande read overflow (more data read than specified)
-        return Result::Err(Error::new(
-            ErrorKind::InvalidData,
-            "Read overflow, corrupt data/metadata",
-        ));
-    }
-
-    let underflow = size as u64 - cursor_read;
-
-    // Handle read underflow (more data specified than expected)
-    if underflow > 0 {
-        tdf_field_read_string(cursor, cursor_start, 0, underflow as u8)?;
-    }
-    res
+    Ok(buf)
 }
