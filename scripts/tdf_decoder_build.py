@@ -33,7 +33,8 @@ def decoders_gen(tdf_defs, output):
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    tdf_template = env.get_template("tdf_decoder.rs.jinja")
+    common_template = env.get_template("tdf_decoder.rs.jinja")
+    csv_template = env.get_template("tdf_decoder_csv.rs.jinja")
 
     def field_conv_func(field, name_prefix=None):
         t = rust_type[field["type"]]
@@ -80,12 +81,14 @@ def decoders_gen(tdf_defs, output):
                 return [
                     (
                         n,
-                        f"tdf_field_read_string(cursor, cursor_start, {field['num']}, size)?",
+                        f"tdf_field_read_string_to_str(cursor, cursor_start, {field['num']}, size)?",
                     )
                 ]
             else:
                 if field["num"] == 0:
-                    return [(n, "tdf_field_read_vla(cursor, cursor_start, size)?")]
+                    return [
+                        (n, "tdf_field_read_vla_to_str(cursor, cursor_start, size)?")
+                    ]
                 else:
                     return [(n + f"[{idx}]", func) for idx in range(field["num"])]
         else:
@@ -117,7 +120,7 @@ def decoders_gen(tdf_defs, output):
         struct_fmts[f"struct {name}"] = fmts
 
     # Generate rust conversion functions
-    for tdf_id, info in tdf_defs["definitions"].items():
+    for _tdf_id, info in tdf_defs["definitions"].items():
         info["rust_convs"] = []
         fmt = []
         for f in info["fields"]:
@@ -133,13 +136,20 @@ def decoders_gen(tdf_defs, output):
         info["rust_head"] = ",".join([f'"{c[0]}"' for c in info["rust_convs"]])
         info["rust_fmt"] = ",".join(fmt)
 
-    tdf_output = pathlib.Path(output) / "decoders.rs"
-    with tdf_output.open("w") as f:
-        f.write(
-            tdf_template.render(
-                structs=tdf_defs["structs"], definitions=tdf_defs["definitions"]
-            )
+    common_output = pathlib.Path(output) / "decoders.rs"
+    csv_output = pathlib.Path(output) / "decoders_csv.rs"
+    with common_output.open("w") as f:
+        rendered = common_template.render(
+            structs=tdf_defs["structs"], definitions=tdf_defs["definitions"]
         )
+        f.write(rendered)
+        f.write(os.linesep)
+
+    with csv_output.open("w") as f:
+        rendered = csv_template.render(
+            structs=tdf_defs["structs"], definitions=tdf_defs["definitions"]
+        )
+        f.write(rendered)
         f.write(os.linesep)
 
 
