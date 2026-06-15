@@ -11,6 +11,11 @@ pub fn tdf_time_to_unix(tdf_time: i64) -> (i64, u32) {
     (unix_seconds, unix_nano as u32)
 }
 
+pub fn tdf_time_to_unix_micros(tdf_time: i64) -> i64 {
+    let (unix_seconds, unix_nano) = tdf_time_to_unix(tdf_time);
+    (unix_seconds * 1_000_000) + (unix_nano as i64 / 1_000)
+}
+
 pub fn tdf_time_to_datetime(tdf_time: i64) -> Option<chrono::DateTime<chrono::Utc>> {
     let (unix_seconds, unix_nano) = tdf_time_to_unix(tdf_time);
     DateTime::from_timestamp(unix_seconds as i64, unix_nano as u32)

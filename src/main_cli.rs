@@ -1,5 +1,6 @@
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
+use infuse_decoder::args;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
@@ -56,11 +57,19 @@ struct Cli {
     /// Write Unix timestamps instead of UTC strings
     #[arg(short, long)]
     unix: bool,
+    #[arg(long, default_value_t = args::OutputFormat::CSV)]
+    format: args::OutputFormat,
     /// Verbose CLI output
     #[arg(short, long)]
     verbose: bool,
     #[arg(long, default_value_t = infuse_decoder::args::BlockSizeOptions::B512)]
     block_size: infuse_decoder::args::BlockSizeOptions,
+    /// Maximum readings per output file (0 is no limit)
+    #[arg(long, default_value_t = infuse_decoder::DEFAULT_MAX_READINGS_PER_OUTPUT_FILE)]
+    max_readings_per_output_file: usize,
+    /// Keep decoder worker output files instead of merging them into linearized outputs
+    #[arg(long = "no-linearize-output", alias = "no-merge-output-files")]
+    no_linearize_output: bool,
 }
 
 fn main() -> io::Result<()> {
@@ -108,6 +117,9 @@ fn main() -> io::Result<()> {
             output_folder: args.output.clone(),
             output_prefix: output_prefix,
             output_unix_time: args.unix,
+            output_format: args.format,
+            merge_output_files: !args.no_linearize_output,
+            max_readings_per_output_file: args.max_readings_per_output_file,
             copy_reporter: IndicatifProgress::new(),
             decode_reporter: IndicatifProgress::new(),
             merge_reporter: IndicatifProgress::new(),

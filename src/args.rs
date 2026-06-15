@@ -18,3 +18,20 @@ impl fmt::Display for BlockSizeOptions {
         }
     }
 }
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    #[value(name = "csv")]
+    CSV,
+    #[value(name = "parquet")]
+    PARQUET,
+}
+
+impl fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OutputFormat::CSV => write!(f, "csv"),
+            OutputFormat::PARQUET => write!(f, "Parquet"),
+        }
+    }
+}

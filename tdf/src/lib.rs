@@ -1,7 +1,10 @@
 use bytemuck;
 use byteorder::{LittleEndian, ReadBytesExt};
 use num::{cast::AsPrimitive, traits::WrappingAdd};
-use std::io::{Cursor, ErrorKind, Read};
+use std::{
+    io::{Cursor, ErrorKind, Read},
+    path::PathBuf,
+};
 
 pub mod decoders;
 pub mod decoders_csv;
@@ -45,6 +48,8 @@ pub trait TdfOutput {
     fn iter_written(&self) -> impl Iterator<Item = (&(Option<u64>, u16), &usize)>;
     /// Get the number of times a specific TDF was written
     fn written(&self, remote_id: Option<u64>, tdf_id: u16) -> usize;
+    /// Get the path for the file associated with a specific TDF
+    fn output_path(self: &Self, remote_id: Option<u64>, tdf_id: u16) -> Option<PathBuf>;
 }
 
 fn diff_data_reconstruct<
