@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+arrow-array = "59.0.0"
+arrow-buffer = "59.0.0"
 arrow-schema = "59.0.0"
 byteorder = "1.5.0"
 chrono = "0.4.38"

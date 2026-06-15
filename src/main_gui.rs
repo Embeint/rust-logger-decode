@@ -8,6 +8,7 @@ use std::{collections::HashMap, path::PathBuf};
 use eframe::egui::{self, IconData};
 use egui_extras::{Column, TableBuilder};
 use image::GenericImageView;
+use infuse_decoder::args::OutputFormat;
 use rfd::FileDialog;
 
 use infuse_decoder::args::BlockSizeOptions;
@@ -78,8 +79,11 @@ impl infuse_decoder::ProgressReporter for SliderState {
 
 struct MyApp {
     time_mode: TimeOutput,
+    output_format: OutputFormat,
+    linearize_output_files: bool,
     device_id: u64,
     block_size: BlockSizeOptions,
+    max_readings_per_output_file: usize,
     error_msg: Option<String>,
     input_path: Option<PathBuf>,
     input_files: Option<HashMap<u64, Vec<PathBuf>>>,
@@ -124,8 +128,11 @@ impl Default for MyApp {
 
         Self {
             time_mode: TimeOutput::UTC,
+            output_format: OutputFormat::CSV,
+            linearize_output_files: true,
             device_id: 0,
             block_size: BlockSizeOptions::B512,
+            max_readings_per_output_file: infuse_decoder::DEFAULT_MAX_READINGS_PER_OUTPUT_FILE,
             error_msg: None,
             input_path: None,
             input_files: None,
@@ -276,7 +283,14 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
 
             ui.label("Output Prefix");
             ui.text_edit_singleline(&mut app.output_prefix);
-            ui.label(format!("(e.g. {}_BATTERY_STATE.csv)", app.output_prefix));
+            let extension = match app.output_format {
+                OutputFormat::CSV => "csv",
+                OutputFormat::PARQUET => "parquet",
+            };
+            ui.label(format!(
+                "(e.g. {}_BATTERY_STATE.{extension})",
+                app.output_prefix
+            ));
             ui.end_row();
         });
 }
@@ -284,21 +298,42 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
 fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            ui.label("Time Output Format");
-            ui.radio_value(
-                &mut app.time_mode,
-                TimeOutput::UTC,
-                "UTC  (2020-01-01T00:00:00.000000Z)",
-            );
-            ui.radio_value(
-                &mut app.time_mode,
-                TimeOutput::UNIX,
-                "UNIX (1577800800.000000)",
-            );
+            ui.label("Output Format");
+            ui.radio_value(&mut app.output_format, OutputFormat::CSV, "CSV");
+            ui.radio_value(&mut app.output_format, OutputFormat::PARQUET, "Parquet");
         });
         ui.separator();
         ui.vertical(|ui| {
-            ui.label("Block Size");
+            ui.label("File Output Control");
+            ui.checkbox(&mut app.linearize_output_files, "Linearize Output");
+            ui.label("Max Readings Per File");
+            ui.add_enabled_ui(app.linearize_output_files, |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut app.max_readings_per_output_file)
+                        .range(0..=usize::MAX)
+                        .speed(10_000),
+                );
+            });
+        });
+        ui.separator();
+        ui.vertical(|ui| {
+            ui.label("Time Output Format");
+            ui.add_enabled_ui(app.output_format == OutputFormat::CSV, |ui| {
+                ui.radio_value(
+                    &mut app.time_mode,
+                    TimeOutput::UTC,
+                    "UTC  (2020-01-01T00:00:00.000000Z)",
+                );
+                ui.radio_value(
+                    &mut app.time_mode,
+                    TimeOutput::UNIX,
+                    "UNIX (1577800800.000000)",
+                );
+            });
+        });
+        ui.separator();
+        ui.vertical(|ui| {
+            ui.label("Input Block Size");
             egui::ComboBox::from_id_salt("Block Size")
                 .selected_text(format!("{:}", app.block_size))
                 .show_ui(ui, |ui| {
@@ -347,6 +382,9 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
             output_folder: app.output_folder.clone(),
             output_prefix: app.output_prefix.clone(),
             output_unix_time: app.time_mode == TimeOutput::UNIX,
+            output_format: app.output_format,
+            merge_output_files: app.linearize_output_files,
+            max_readings_per_output_file: app.max_readings_per_output_file,
             copy_reporter: app.progress_copy.clone(),
             decode_reporter: app.progress_decode.clone(),
             merge_reporter: app.progress_merge.clone(),

@@ -1,34 +1,212 @@
+use std::io::{Cursor, Error, ErrorKind, Read, Result};
 use std::sync::Arc;
 
-use arrow_schema::{DataType, Field, Fields, Schema, TimeUnit};
+use arrow_array::{
+    ArrayRef, BinaryArray, FixedSizeListArray, Float32Array, Float64Array, Int8Array, Int16Array,
+    Int32Array, ListArray, RecordBatch, StringArray, StructArray,
+    TimestampMicrosecondArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+};
+use arrow_buffer::{OffsetBuffer, ScalarBuffer};
+use arrow_schema::{ArrowError, DataType, Field, Fields, Schema, SchemaRef, TimeUnit};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 
 fn timestamp_field() -> Field {
     Field::new(
         "timestamp",
         DataType::Timestamp(TimeUnit::Microsecond, Some("+00:00".into())),
-        false,
+        true,
     )
 }
 
-pub fn tdf_parquet_schemas() -> Vec<(u16, &'static str, Schema)>
-{
+fn sample_idx_field() -> Field {
+    Field::new("sample_idx", DataType::UInt16, true)
+}
+
+fn tdf_field_read_string_to_string(
+    cursor: &mut Cursor<&[u8]>,
+    cursor_start: u64,
+    num: u8,
+    size: u8,
+) -> Result<String> {
+    let buf = crate::decoders::tdf_field_read_string(cursor, cursor_start, num, size)?;
+
+    match String::from_utf8(buf) {
+        Ok(val) => Ok(val.trim_matches(char::from(0)).to_string()),
+        Err(..) => Ok(String::new()),
+    }
+}
+
+fn finish_tdf_read(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) -> Result<()> {
+    let cursor_end = cursor.position();
+    let cursor_read = cursor_end - cursor_start;
+
+    if (size as u64) < cursor_read {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "Read overflow, corrupt data/metadata",
+        ));
+    }
+
+    let underflow = size as u64 - cursor_read;
+    if underflow > 0 {
+        let mut buf = vec![0; underflow as usize];
+        cursor.read_exact(&mut buf)?;
+    }
+
+    Ok(())
+}
+
+pub fn tdf_parquet_schemas() -> Vec<(u16, &'static str, SchemaRef)> {
     vec![
 {% for tdf_id, info in definitions.items() %}
         (
             {{ tdf_id }},
             "{{ info['name'] }}",
-            tdf_parquet_schema(&{{ tdf_id }}).unwrap(),
+            tdf_parquet_schema({{ tdf_id }}).unwrap(),
         ),
 {% endfor %}
     ]
 }
 
-pub fn tdf_parquet_schema(tdf_id: &u16) -> Option<Schema>
-{
+pub fn tdf_parquet_has_schema(tdf_id: u16) -> bool {
     match tdf_id {
 {% for tdf_id, info in definitions.items() %}
-        {{ tdf_id }} => Some({{ info['arrow_schema'] }}),
+        {{ tdf_id }} => true,
+{% endfor %}
+        _ => false,
+    }
+}
+
+pub fn tdf_parquet_schema(tdf_id: u16) -> Option<SchemaRef> {
+    match tdf_id {
+{% for tdf_id, info in definitions.items() %}
+        {{ tdf_id }} => Some(Arc::new({{ info['arrow_schema'] }})),
 {% endfor %}
         _ => None,
     }
 }
+
+pub fn tdf_parquet_builder(tdf_id: u16, capacity: usize) -> Option<TdfParquetBatchBuilder> {
+    match tdf_id {
+{% for tdf_id, info in definitions.items() %}
+        {{ tdf_id }} => Some(TdfParquetBatchBuilder::{{ info['rust_variant_name'] }}(
+            {{ info['rust_builder_name'] }}::new(capacity),
+        )),
+{% endfor %}
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TdfParquetRowMeta {
+    pub time_unix_micros: Option<i64>,
+    pub sample_idx: Option<u16>,
+}
+
+pub enum TdfParquetBatchBuilder {
+{% for _tdf_id, info in definitions.items() %}
+    {{ info['rust_variant_name'] }}({{ info['rust_builder_name'] }}),
+{% endfor %}
+}
+
+impl TdfParquetBatchBuilder {
+    pub fn schema(&self) -> SchemaRef {
+        match self {
+{% for _tdf_id, info in definitions.items() %}
+            Self::{{ info['rust_variant_name'] }}(builder) => builder.schema(),
+{% endfor %}
+        }
+    }
+
+    pub fn rows(&self) -> usize {
+        match self {
+{% for _tdf_id, info in definitions.items() %}
+            Self::{{ info['rust_variant_name'] }}(builder) => builder.rows(),
+{% endfor %}
+        }
+    }
+
+    pub fn append(
+        &mut self,
+        meta: TdfParquetRowMeta,
+        size: u8,
+        cursor: &mut Cursor<&[u8]>,
+    ) -> Result<()> {
+        match self {
+{% for _tdf_id, info in definitions.items() %}
+            Self::{{ info['rust_variant_name'] }}(builder) => builder.append(meta, size, cursor),
+{% endfor %}
+        }
+    }
+
+    pub fn finish_batch(&mut self) -> std::result::Result<RecordBatch, ArrowError> {
+        match self {
+{% for _tdf_id, info in definitions.items() %}
+            Self::{{ info['rust_variant_name'] }}(builder) => builder.finish_batch(),
+{% endfor %}
+        }
+    }
+}
+
+{% for tdf_id, info in definitions.items() %}
+pub struct {{ info['rust_builder_name'] }} {
+{% for name, ty in info['parquet_storage_fields'] %}
+    {{ name }}: {{ ty }},
+{% endfor %}
+}
+
+impl {{ info['rust_builder_name'] }} {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+{% for init in info['parquet_init_fields'] %}
+            {{ init }},
+{% endfor %}
+        }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        tdf_parquet_schema({{ tdf_id }}).unwrap()
+    }
+
+    pub fn rows(&self) -> usize {
+        self.row_timestamp.len()
+    }
+
+{% if info['parquet_has_lists'] %}
+    fn list_value_field(&self, field_index: usize) -> Arc<Field> {
+        let schema = self.schema();
+        match schema.field(field_index).data_type() {
+            DataType::List(field) => field.clone(),
+            _ => unreachable!("generated list field index is not a list"),
+        }
+    }
+{% endif %}
+
+    pub fn append(
+        &mut self,
+        meta: TdfParquetRowMeta,
+        size: u8,
+        cursor: &mut Cursor<&[u8]>,
+    ) -> Result<()> {
+        let cursor_start = cursor.position();
+
+{% for line in info['parquet_append_lines'] %}
+        {{ line }}
+{% endfor %}
+
+        finish_tdf_read(cursor, cursor_start, size)
+    }
+
+    pub fn finish_batch(&mut self) -> std::result::Result<RecordBatch, ArrowError> {
+        let schema = self.schema();
+        let columns = vec![
+{% for array in info['parquet_finish_arrays'] %}
+            {{ array }},
+{% endfor %}
+        ];
+
+        RecordBatch::try_new(schema, columns)
+    }
+}
+
+{% endfor %}

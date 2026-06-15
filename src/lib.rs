@@ -10,7 +10,11 @@ use tdf::TdfOutput;
 
 pub mod args;
 pub mod fs_util;
+mod output_common;
 mod output_csv;
+mod output_parquet;
+
+pub const DEFAULT_MAX_READINGS_PER_OUTPUT_FILE: usize = 0;
 
 pub trait ProgressReporter {
     /// Called when progress starts. Could be used to initialize the state or display a start message.
@@ -48,10 +52,12 @@ pub struct DecodeWorkerArgs {
     pub decoder_idx: usize,
     pub input_file: std::path::PathBuf,
     pub output_folder: std::path::PathBuf,
+    pub output_prefix: String,
     pub output_unix_time: bool,
     pub start_block: usize,
     pub num_blocks: usize,
     pub block_size: usize,
+    pub output_format: args::OutputFormat,
 }
 
 #[derive(Clone)]
@@ -67,14 +73,11 @@ pub struct DecodeWorkerArgsReporter<T: ProgressReporter> {
     pub reporter: T,
 }
 
-pub fn worker_run_decode<T: ProgressReporter>(mut args: DecodeWorkerArgsReporter<T>) {
+pub fn worker_run_decode<T: ProgressReporter, U: TdfOutput>(
+    mut args: DecodeWorkerArgsReporter<T>,
+    mut writer: U,
+) {
     let mut block_counter: HashMap<blocks::BlockTypes, usize> = HashMap::new();
-    let mut csv_writer = output_csv::TdfCsvWriter::new(
-        args.decode_args.decoder_idx,
-        args.decode_args.output_folder,
-        args.decode_args.output_unix_time,
-    );
-
     // Open file
     let file = File::open(args.decode_args.input_file.clone()).unwrap();
     let mmap = unsafe { Mmap::map(&file).unwrap() };
@@ -90,7 +93,7 @@ pub fn worker_run_decode<T: ProgressReporter>(mut args: DecodeWorkerArgsReporter
         .chunks_exact(args.decode_args.block_size)
         .enumerate()
     {
-        match blocks::decode_block(&mut csv_writer, block) {
+        match blocks::decode_block(&mut writer, block) {
             Ok(block_type) => *block_counter.entry(block_type).or_default() += 1,
             Err(_) => *block_counter.entry(blocks::BlockTypes::ERROR).or_default() += 1,
         }
@@ -104,11 +107,11 @@ pub fn worker_run_decode<T: ProgressReporter>(mut args: DecodeWorkerArgsReporter
     // Push TDF stats into the output hashmap
     let mut tdf_stats = args.tdf_stats.lock().unwrap();
 
-    for ((remote_id, tdf_id), tdf_cnt) in csv_writer.iter_written() {
+    for ((remote_id, tdf_id), tdf_cnt) in writer.iter_written() {
         let res = tdf_stats
             .entry((*remote_id, *tdf_id))
             .or_insert_with(|| HashMap::new());
-        let path = csv_writer.output_path(*remote_id, *tdf_id).unwrap();
+        let path = writer.output_path(*remote_id, *tdf_id).unwrap();
 
         res.insert(
             args.decode_args.decoder_idx,
@@ -134,6 +137,9 @@ pub struct RunArgs<T: ProgressReporter> {
     pub output_folder: PathBuf,
     pub output_prefix: String,
     pub output_unix_time: bool,
+    pub output_format: args::OutputFormat,
+    pub merge_output_files: bool,
+    pub max_readings_per_output_file: usize,
     pub copy_reporter: T,
     pub decode_reporter: T,
     pub merge_reporter: T,
@@ -189,10 +195,12 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
                 decoder_idx: idx,
                 input_file: merged_file.clone(),
                 output_folder: args.output_folder.clone(),
+                output_prefix: args.output_prefix.clone(),
                 output_unix_time: args.output_unix_time,
                 start_block: idx * blocks_per_worker,
                 num_blocks: num,
                 block_size: args.block_size,
+                output_format: args.output_format,
             },
             block_stats: stats_block.clone(),
             tdf_stats: stats_tdf.clone(),
@@ -204,7 +212,25 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
     let mut workers = vec![];
     for worker_arg in worker_args.into_iter() {
         workers.push(thread::spawn(move || {
-            worker_run_decode(worker_arg);
+            match worker_arg.decode_args.output_format {
+                args::OutputFormat::CSV => {
+                    let writer = output_csv::TdfCsvWriter::new(
+                        worker_arg.decode_args.decoder_idx,
+                        worker_arg.decode_args.output_folder.clone(),
+                        worker_arg.decode_args.output_prefix.clone(),
+                        worker_arg.decode_args.output_unix_time,
+                    );
+                    worker_run_decode(worker_arg, writer);
+                }
+                args::OutputFormat::PARQUET => {
+                    let writer = output_parquet::TdfParquetWriter::new(
+                        worker_arg.decode_args.decoder_idx,
+                        worker_arg.decode_args.output_folder.clone(),
+                        worker_arg.decode_args.output_prefix.clone(),
+                    );
+                    worker_run_decode(worker_arg, writer);
+                }
+            };
         }));
     }
 
@@ -214,8 +240,29 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
     }
     args.decode_reporter.stop();
 
-    // Merge output files
-    output_csv::merge(args, &mut output_files, &stats_tdf)?;
+    if args.merge_output_files {
+        match args.output_format {
+            args::OutputFormat::CSV => {
+                output_csv::merge(args, &mut output_files, &stats_tdf)?;
+            }
+            args::OutputFormat::PARQUET => {
+                output_parquet::merge_with_threshold(
+                    args,
+                    &mut output_files,
+                    &stats_tdf,
+                    args.max_readings_per_output_file,
+                )?;
+            }
+        }
+    } else {
+        let results = stats_tdf.lock().unwrap();
+        let mut worker_output_files: Vec<PathBuf> = results
+            .values()
+            .flat_map(|worker_outputs| worker_outputs.values().map(|output| output.output.clone()))
+            .collect();
+        worker_output_files.sort();
+        output_files.extend(worker_output_files);
+    }
 
     let block = stats_block.lock().unwrap().clone();
     let mut tdf = HashMap::new();

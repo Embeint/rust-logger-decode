@@ -1,6 +1,7 @@
-use std::io::{Cursor, Error, ErrorKind, Read, Result};
+use std::io::{Cursor, Read, Result, Error, ErrorKind};
 
-pub fn tdf_name(tdf_id: &u16) -> String {
+pub fn tdf_name(tdf_id: &u16) -> String
+{
     match tdf_id {
         1 => String::from("ANNOUNCE"),
         2 => String::from("BATTERY_STATE"),
@@ -66,11 +67,8 @@ pub fn tdf_name(tdf_id: &u16) -> String {
     }
 }
 
-pub fn vla_bytes_remaining(
-    cursor: &mut Cursor<&[u8]>,
-    cursor_start: u64,
-    size: u8,
-) -> Result<usize> {
+pub fn vla_bytes_remaining(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) -> Result<usize>
+{
     let cursor_current = cursor.position();
     let cursor_read = cursor_current - cursor_start;
     if cursor_read >= size as u64 {
@@ -84,12 +82,8 @@ pub fn vla_bytes_remaining(
     Ok(bytes_remaining as usize)
 }
 
-pub fn tdf_field_read_string(
-    cursor: &mut Cursor<&[u8]>,
-    cursor_start: u64,
-    num: u8,
-    size: u8,
-) -> Result<Vec<u8>> {
+pub fn tdf_field_read_string(cursor: &mut Cursor<&[u8]>, cursor_start: u64, num: u8, size: u8) ->  Result<Vec<u8>>
+{
     let string_length = match num {
         0 => vla_bytes_remaining(cursor, cursor_start, size)?,
         _ => num as usize,
@@ -101,11 +95,8 @@ pub fn tdf_field_read_string(
     Ok(buf)
 }
 
-pub fn tdf_field_read_vla(
-    cursor: &mut Cursor<&[u8]>,
-    cursor_start: u64,
-    size: u8,
-) -> Result<Vec<u8>> {
+pub fn tdf_field_read_vla(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: u8) ->  Result<Vec<u8>>
+{
     let bytes_remaining = vla_bytes_remaining(cursor, cursor_start, size)?;
     let mut buf = vec![0u8; bytes_remaining];
 
