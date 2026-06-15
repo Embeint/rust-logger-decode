@@ -16,7 +16,8 @@ The application provides options to control the input selection and output gener
 
 ### 1) Output Folder
 
-This field controls where the output data will be placed after decoding. It defaults to $USER_HOME/infuse_iot. The output folder can be updated by clicking `Folder` (1a).
+This field controls where the output data will be placed after decoding. It defaults to $USER_HOME/infuse_iot. The output folder can be updated by clicking `Folder` (1a). The output folder can be opened
+in the default system viewer by clicking `Open` (1b).
 
 ### 2) Input folder/file
 
@@ -32,13 +33,36 @@ If data from multiple Tauro collars exists on a single SD card, this option will
 
 This field controls the prefix of the output filenames, created in the output folder. This value will default to the Device ID.
 
-### 5) Time Output Format
+### 5) Output Format
+
+Save the output as either Comma Separated Value (CSV) or [Apache Parquet](https://parquet.apache.org/) files.
+Decoding to Parquet is faster and the resulting files are smaller, but the results are not human readable.
+
+### 6) Linearize Output
+
+To optimize processing times, the decoding work is split across multiple CPU cores to intermediate files, with a
+post-processing step pulling the intermediate results back into a single file.
+If a single output file is not required, disabling this skips the merging step, saving decoding time.
+If disabled, the final files have a numeric postfix (e.g. `test_BATTERY_STATE_00000.csv`) which indicates the order from the
+original binary file.
+
+### 7) Maximum Readings per File
+
+If the Linearize Output step is enabled, the output data can be split into multiple files based on the number of rows in each file.
+This can be useful to limit individual files sizes or optimize data loading. The default value of 0 means no limit.
+
+### 8) Time Output Format
 
 This option controls the output format of the timestamps written into the output CSV files. The two options are a [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) formatted string (for example 2024-06-27T13:55:12.123456Z), or a Unix timestamp with subseconds (for example 1731457165.123456).
 
 The RFC3339 option is recommended if the CSV outputs will be looked at by users, as it is a more human-readable format. By comparison, the Unix timestamps are simpler for data processing scripts to parse, and are faster for the decoder tool to generate.
 
-### 6) Decode
+### 9) Input Block Size
+
+Specifies the data block size of the input binary data. The default value of `512` should be used unless instructions to the
+contrary are provided.
+
+### 10) Decode
 Once an input file or folder has been selected, the decode button becomes available to select. Clicking this button begins the decode process with the currently selected options. The button is unavailable to select again until the previous decode has completed.
 
 ## Decoding Process
@@ -49,11 +73,11 @@ The data on the SD card is copied onto the local filesystem to create the merged
 
 ### 2) Decoding files
 
-The binary data format is decoded into human-readable CSV files. This process is run across all CPU cores to maximize performance. 
+The binary data format is decoded into human-readable CSV or Apache Parquet files. This process is run across all CPU cores to maximize performance. 
 
 ### 3) Merging output
 
-The individual CSV files created by each thread in the decoding step are merged back together into a single file per sensor stream.
+The individual files created by each thread in the decoding step are merged back together into a single file per sensor stream, unless output linearization is disabled.
 
 ## Output Statistics
 
