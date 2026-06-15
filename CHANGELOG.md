@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.9.0] - 2026-06-16
+
+ - New output format [Apache Parquet](https://parquet.apache.org/)
+ - Option to limit output files to a certain number of readings
+    * If the limit is hit, output files have a numeric postfix
+ - Option to skip merge step to optimize decoding times
+
 ## [1.8.1] - 2026-06-05
 
  - MacOS GUI distributed as notorized `.dmg`
