@@ -14,7 +14,7 @@ pub fn vla_bytes_remaining(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size: 
 {
     let cursor_current = cursor.position();
     let cursor_read = cursor_current - cursor_start;
-    if cursor_read >= size as u64 {
+    if cursor_read > size as u64 {
         return Result::Err(Error::new(
             ErrorKind::InvalidData,
             "Insufficient data remaining",

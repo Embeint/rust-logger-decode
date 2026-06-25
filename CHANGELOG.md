@@ -8,6 +8,7 @@ This project adheres to [Semantic Versioning](https://semver.org).
 
  - Nested TDF definitions inherit the parent field name in the CSV header column
  - Variable length array structs as the last element in a TDF generate a new row per instance
+ - Handle 0 length trailing VLAs
 
 ## [1.9.0] - 2026-06-16
 
