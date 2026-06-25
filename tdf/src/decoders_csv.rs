@@ -227,6 +227,25 @@ fn tdf_field_read_vla_to_str(
     Ok(format!("{}", hex::encode(buf)))
 }
 
+fn tdf_variable_item_count(size: u8, base_size: usize, item_size: usize) -> Result<usize> {
+    if (size as usize) < base_size {
+        return Result::Err(Error::new(
+            ErrorKind::InvalidData,
+            "Read underflow, corrupt data/metadata",
+        ));
+    }
+
+    let bytes_remaining = size as usize - base_size;
+    if bytes_remaining % item_size != 0 {
+        return Result::Err(Error::new(
+            ErrorKind::InvalidData,
+            "Variable-length array does not align to element size",
+        ));
+    }
+
+    Ok(bytes_remaining / item_size)
+}
+
 pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> Result<String> {
     let cursor_start = cursor.position();
 
@@ -510,22 +529,53 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u16::<LittleEndian>()?,
                 tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
             )),
-        34 =>
-            Ok(format!(
-                "{},{},{},{},{},{},{},{},{},{},{},{}",
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u8()? as f64 / -1.0,
-                cursor.read_i8()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u8()? as f64 / -1.0,
-                cursor.read_i8()?,
-            )),
+        34 => {
+            let item_count = tdf_variable_item_count(size, 16, 10)?;
+            if item_count == 0 {
+                Ok(format!(
+                    "{},{},{},{},{},{},{},{},{},{},{},{}",
+                    cursor.read_u16::<LittleEndian>()?,
+                    cursor.read_u16::<LittleEndian>()?,
+                    cursor.read_u32::<LittleEndian>()?,
+                    cursor.read_u16::<LittleEndian>()?,
+                    cursor.read_u32::<LittleEndian>()?,
+                    cursor.read_u8()? as f64 / -1.0,
+                    cursor.read_i8()?,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                ))
+            } else {
+                let mut out = format!(
+                    "{},{},{},{},{},{},{},{},{},{},{},{}",
+                    cursor.read_u16::<LittleEndian>()?,
+                    cursor.read_u16::<LittleEndian>()?,
+                    cursor.read_u32::<LittleEndian>()?,
+                    cursor.read_u16::<LittleEndian>()?,
+                    cursor.read_u32::<LittleEndian>()?,
+                    cursor.read_u8()? as f64 / -1.0,
+                    cursor.read_i8()?,
+                    cursor.read_u32::<LittleEndian>()?,
+                    cursor.read_u16::<LittleEndian>()?,
+                    cursor.read_u16::<LittleEndian>()? as f64 / 1000.0,
+                    cursor.read_u8()? as f64 / -1.0,
+                    cursor.read_i8()?,
+                );
+                for _ in 1..item_count {
+                    out.push_str(&format!(
+                        "\n,,,,,,,,{},{},{},{},{}",
+                        cursor.read_u32::<LittleEndian>()?,
+                        cursor.read_u16::<LittleEndian>()?,
+                        cursor.read_u16::<LittleEndian>()? as f64 / 1000.0,
+                        cursor.read_u8()? as f64 / -1.0,
+                        cursor.read_i8()?,
+                    ));
+                }
+                Ok(out)
+            }
+        },
         35 =>
             Ok(format!(
                 "0x{:012x},{},{}",
@@ -651,11 +701,27 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 cursor.read_u8()?,
                 cursor.read_u8()?,
             )),
-        52 =>
-            Ok(format!(
-                "{}",
-                tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
-            )),
+        52 => {
+            let item_count = tdf_variable_item_count(size, 0, 4)?;
+            if item_count == 0 {
+                Ok(format!(
+                    "{}",
+                    "",
+                ))
+            } else {
+                let mut out = format!(
+                    "0x{:08x}",
+                    cursor.read_u32::<LittleEndian>()?,
+                );
+                for _ in 1..item_count {
+                    out.push_str(&format!(
+                        "\n,0x{:08x}",
+                        cursor.read_u32::<LittleEndian>()?,
+                    ));
+                }
+                Ok(out)
+            }
+        },
         53 =>
             Ok(format!(
                 "{}",
@@ -728,4 +794,97 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
         crate::decoders::tdf_field_read_string(cursor, cursor_start, 0, underflow as u8)?;
     }
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tdf34_base_bytes() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&5u32.to_le_bytes());
+        bytes.push(6);
+        bytes.push((-7i8) as u8);
+        bytes
+    }
+
+    fn push_tdf34_neighbour(
+        bytes: &mut Vec<u8>,
+        earfcn: u32,
+        pci: u16,
+        time_diff: u16,
+        rsrp: u8,
+        rsrq: i8,
+    ) {
+        bytes.extend_from_slice(&earfcn.to_le_bytes());
+        bytes.extend_from_slice(&pci.to_le_bytes());
+        bytes.extend_from_slice(&time_diff.to_le_bytes());
+        bytes.push(rsrp);
+        bytes.push(rsrq as u8);
+    }
+
+    #[test]
+    fn trailing_variable_array_zero_items_blanks_last_columns() {
+        let bytes = tdf34_base_bytes();
+        let mut cursor = Cursor::new(bytes.as_slice());
+
+        let row = tdf_read_into_str(&34, bytes.len() as u8, &mut cursor).unwrap();
+
+        assert_eq!(row, "1,2,3,4,5,-6,-7,,,,,");
+    }
+
+    #[test]
+    fn trailing_variable_array_one_item_stays_on_first_row() {
+        let mut bytes = tdf34_base_bytes();
+        push_tdf34_neighbour(&mut bytes, 100, 11, 2500, 8, -9);
+        let mut cursor = Cursor::new(bytes.as_slice());
+
+        let row = tdf_read_into_str(&34, bytes.len() as u8, &mut cursor).unwrap();
+
+        assert_eq!(row, "1,2,3,4,5,-6,-7,100,11,2.5,-8,-9");
+    }
+
+    #[test]
+    fn trailing_variable_array_extra_items_add_blank_prefix_rows() {
+        let mut bytes = tdf34_base_bytes();
+        push_tdf34_neighbour(&mut bytes, 100, 11, 2500, 8, -9);
+        push_tdf34_neighbour(&mut bytes, 200, 12, 3000, 10, -11);
+        let mut cursor = Cursor::new(bytes.as_slice());
+
+        let row = tdf_read_into_str(&34, bytes.len() as u8, &mut cursor).unwrap();
+
+        assert_eq!(
+            row,
+            "1,2,3,4,5,-6,-7,100,11,2.5,-8,-9\n,,,,,,,,200,12,3,-10,-11"
+        );
+    }
+
+    #[test]
+    fn trailing_variable_array_items_use_single_field_formatting() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0x12345678u32.to_le_bytes());
+        bytes.extend_from_slice(&0x90abcdefu32.to_le_bytes());
+        let mut cursor = Cursor::new(bytes.as_slice());
+
+        let row = tdf_read_into_str(&52, bytes.len() as u8, &mut cursor).unwrap();
+
+        assert_eq!(row, "0x12345678\n,0x90abcdef");
+    }
+
+    #[test]
+    fn trailing_uint8_variable_array_stays_as_hex_payload() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0x12345678u32.to_le_bytes());
+        bytes.extend_from_slice(&9u16.to_le_bytes());
+        bytes.extend_from_slice(&[0xab, 0xcd, 0xef]);
+        let mut cursor = Cursor::new(bytes.as_slice());
+
+        let row = tdf_read_into_str(&25, bytes.len() as u8, &mut cursor).unwrap();
+
+        assert_eq!(row, "0x12345678,9,abcdef");
+    }
 }

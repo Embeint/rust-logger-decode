@@ -178,7 +178,7 @@ def decoders_gen(tdf_defs, output):
     for _tdf_id, info in tdf_defs["definitions"].items():
         info["arrow_schema"] = arrow_schema_expr(info, tdf_defs["structs"])
 
-    def field_conv_func(field, name_prefix=None):
+    def field_conv_func(field, name_prefix=None, variable_item=False):
         t = rust_type[field["type"]]
         func = f"cursor.read_{t[0]}"
         if t[1]:
@@ -229,6 +229,8 @@ def decoders_gen(tdf_defs, output):
                 ]
             else:
                 if field["num"] == 0:
+                    if variable_item:
+                        return [(n, func)]
                     return [
                         (n, "tdf_field_read_vla_to_str(cursor, cursor_start, size)?")
                     ]
@@ -262,22 +264,95 @@ def decoders_gen(tdf_defs, output):
         structs[f"struct {name}"] = struct["fields"]
         struct_fmts[f"struct {name}"] = fmts
 
+    def csv_flatten_field(field, convs, fmt, name_prefix=None, variable_item=False):
+        if field["type"] in structs:
+            for struct_field in structs[field["type"]]:
+                convs += field_conv_func(
+                    struct_field,
+                    name_prefix=field["name"] if name_prefix is None else f"{name_prefix}.{field['name']}",
+                    variable_item=variable_item,
+                )
+            fmt += struct_fmts[field["type"]]
+        elif field["type"] in rust_type:
+            convs += field_conv_func(field, name_prefix, variable_item)
+            fmt_field = (
+                {k: v for k, v in field.items() if k != "num"}
+                if variable_item and field.get("num", None) == 0
+                else field
+            )
+            fmt += field_fmt(fmt_field)
+        else:
+            raise RuntimeError(f"Bad type '{field['type']}'")
+
+    def csv_field_byte_size(field, repeated_item=False):
+        c_type = field["type"]
+        conv = field.get("conversion", {})
+        if "int" in conv:
+            return field["num"]
+        if c_type in structs:
+            base = sum(csv_field_byte_size(child) for child in structs[c_type])
+            if not repeated_item and field.get("num", 1) not in (0, 1):
+                return base * field["num"]
+            return base
+        if c_type == "char":
+            return field.get("num", 0)
+        base = {
+            "int8_t": 1,
+            "uint8_t": 1,
+            "int16_t": 2,
+            "uint16_t": 2,
+            "int32_t": 4,
+            "uint32_t": 4,
+            "int64_t": 8,
+            "uint64_t": 8,
+            "float": 4,
+            "float32_t": 4,
+            "float64_t": 8,
+        }[c_type]
+        if not repeated_item and field.get("num", 1) not in (0, 1):
+            return base * field["num"]
+        return base
+
     # Generate rust conversion functions
     for _tdf_id, info in tdf_defs["definitions"].items():
         info["rust_convs"] = []
         fmt = []
-        for f in info["fields"]:
-            if f["type"] in structs:
-                for struct_field in structs[f["type"]]:
-                    info["rust_convs"] += field_conv_func(
-                        struct_field, name_prefix=f["name"]
-                    )
-                fmt += struct_fmts[f["type"]]
-            elif f["type"] in rust_type:
-                info["rust_convs"] += field_conv_func(f)
-                fmt += field_fmt(f)
-            else:
-                raise RuntimeError(f"Bad type '{f['type']}'")
+        info["csv_variable"] = None
+        variable_field = None
+        if info["fields"]:
+            last_field = info["fields"][-1]
+            if (
+                last_field.get("num", None) == 0
+                and last_field["type"] not in ("char", "uint8_t")
+            ):
+                variable_field = last_field
+
+        fields = info["fields"][:-1] if variable_field is not None else info["fields"]
+        for f in fields:
+            csv_flatten_field(f, info["rust_convs"], fmt)
+
+        if variable_field is not None:
+            variable_convs = []
+            variable_fmt = []
+            csv_flatten_field(
+                variable_field,
+                variable_convs,
+                variable_fmt,
+                variable_item=True,
+            )
+            prefix_columns = len(info["rust_convs"]) + 1
+            info["csv_variable"] = {
+                "base_size": sum(csv_field_byte_size(field) for field in fields),
+                "item_size": csv_field_byte_size(variable_field, repeated_item=True),
+                "fmt": ",".join(variable_fmt),
+                "empty_fmt": ",".join(fmt + ["{}"] * len(variable_fmt)),
+                "base_convs": list(info["rust_convs"]),
+                "convs": variable_convs,
+                "empty_suffix": "," * len(variable_fmt),
+                "continuation_prefix": "," * prefix_columns,
+            }
+            info["rust_convs"] += variable_convs
+            fmt += variable_fmt
 
         info["rust_head"] = ",".join([f'"{c[0]}"' for c in info["rust_convs"]])
         info["rust_fmt"] = ",".join(fmt)
