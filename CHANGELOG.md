@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.10.0] - 2026-06-xx
+
+ - Nested TDF definitions inherit the parent field name in the CSV header column
+
 ## [1.9.0] - 2026-06-16
 
  - New output format [Apache Parquet](https://parquet.apache.org/)

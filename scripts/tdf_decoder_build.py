@@ -256,12 +256,10 @@ def decoders_gen(tdf_defs, output):
     structs = {}
     struct_fmts = {}
     for name, struct in tdf_defs["structs"].items():
-        funcs = []
         fmts = []
         for f in struct["fields"]:
-            funcs += field_conv_func(f)
             fmts += field_fmt(f)
-        structs[f"struct {name}"] = funcs
+        structs[f"struct {name}"] = struct["fields"]
         struct_fmts[f"struct {name}"] = fmts
 
     # Generate rust conversion functions
@@ -270,7 +268,10 @@ def decoders_gen(tdf_defs, output):
         fmt = []
         for f in info["fields"]:
             if f["type"] in structs:
-                info["rust_convs"] += structs[f["type"]]
+                for struct_field in structs[f["type"]]:
+                    info["rust_convs"] += field_conv_func(
+                        struct_field, name_prefix=f["name"]
+                    )
                 fmt += struct_fmts[f["type"]]
             elif f["type"] in rust_type:
                 info["rust_convs"] += field_conv_func(f)
