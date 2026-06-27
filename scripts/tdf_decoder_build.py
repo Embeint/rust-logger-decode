@@ -269,7 +269,9 @@ def decoders_gen(tdf_defs, output):
             for struct_field in structs[field["type"]]:
                 convs += field_conv_func(
                     struct_field,
-                    name_prefix=field["name"] if name_prefix is None else f"{name_prefix}.{field['name']}",
+                    name_prefix=field["name"]
+                    if name_prefix is None
+                    else f"{name_prefix}.{field['name']}",
                     variable_item=variable_item,
                 )
             fmt += struct_fmts[field["type"]]
@@ -321,9 +323,9 @@ def decoders_gen(tdf_defs, output):
         variable_field = None
         if info["fields"]:
             last_field = info["fields"][-1]
-            if (
-                last_field.get("num", None) == 0
-                and last_field["type"] not in ("char", "uint8_t")
+            if last_field.get("num", None) == 0 and last_field["type"] not in (
+                "char",
+                "uint8_t",
             ):
                 variable_field = last_field
 
@@ -447,7 +449,9 @@ def decoders_gen(tdf_defs, output):
             return field["num"]
         if c_type.startswith("struct "):
             struct_name = c_type.removeprefix("struct ")
-            return sum(field_byte_size(f) for f in tdf_defs["structs"][struct_name]["fields"])
+            return sum(
+                field_byte_size(f) for f in tdf_defs["structs"][struct_name]["fields"]
+            )
         if c_type == "char":
             return field.get("num", 0)
         base = {
@@ -473,7 +477,10 @@ def decoders_gen(tdf_defs, output):
         if c_type.startswith("struct "):
             struct_name = c_type.removeprefix("struct ")
             child_fields = tdf_defs["structs"][struct_name]["fields"]
-            children = [field_model(child, path + [arrow_name(child["name"])]) for child in child_fields]
+            children = [
+                field_model(child, path + [arrow_name(child["name"])])
+                for child in child_fields
+            ]
             if num == 0:
                 return {
                     "kind": "list",
@@ -508,8 +515,12 @@ def decoders_gen(tdf_defs, output):
             return {
                 "kind": "list",
                 "path": path,
-                "child": field_model({k: v for k, v in field.items() if k != "num"}, path),
-                "item_size": field_byte_size({k: v for k, v in field.items() if k != "num"}),
+                "child": field_model(
+                    {k: v for k, v in field.items() if k != "num"}, path
+                ),
+                "item_size": field_byte_size(
+                    {k: v for k, v in field.items() if k != "num"}
+                ),
                 "field_expr": arrow_field_expr(field, tdf_defs["structs"], 12),
             }
 
@@ -517,7 +528,9 @@ def decoders_gen(tdf_defs, output):
             return {
                 "kind": "fixed_list",
                 "path": path,
-                "child": field_model({k: v for k, v in field.items() if k != "num"}, path),
+                "child": field_model(
+                    {k: v for k, v in field.items() if k != "num"}, path
+                ),
                 "num": num,
                 "field_expr": arrow_field_expr(field, tdf_defs["structs"], 12),
             }
@@ -554,11 +567,17 @@ def decoders_gen(tdf_defs, output):
     def model_init_fields(model, out, capacity):
         kind = model["kind"]
         if kind == "primitive":
-            out.append(f"{rust_field_ident(model['path'])}: Vec::with_capacity({capacity})")
+            out.append(
+                f"{rust_field_ident(model['path'])}: Vec::with_capacity({capacity})"
+            )
         elif kind == "string":
-            out.append(f"{rust_field_ident(model['path'])}: Vec::with_capacity({capacity})")
+            out.append(
+                f"{rust_field_ident(model['path'])}: Vec::with_capacity({capacity})"
+            )
         elif kind == "binary":
-            out.append(f"{rust_field_ident(model['path'])}: Vec::with_capacity({capacity})")
+            out.append(
+                f"{rust_field_ident(model['path'])}: Vec::with_capacity({capacity})"
+            )
         elif kind == "fixed_list":
             model_init_fields(model["child"], out, f"{capacity} * {model['num']}")
         elif kind == "list":
@@ -647,8 +666,12 @@ def decoders_gen(tdf_defs, output):
                 "        }"
             )
         if kind == "struct":
-            child_fields = ",\n            ".join(child["field_expr"] for child in model["children"])
-            child_arrays = ",\n            ".join(model_finish_expr(child) for child in model["children"])
+            child_fields = ",\n            ".join(
+                child["field_expr"] for child in model["children"]
+            )
+            child_arrays = ",\n            ".join(
+                model_finish_expr(child) for child in model["children"]
+            )
             return (
                 "Arc::new(StructArray::try_new(\n"
                 f"            Fields::from(vec![\n            {child_fields}\n            ]),\n"
