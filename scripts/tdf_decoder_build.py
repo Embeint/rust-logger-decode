@@ -739,9 +739,16 @@ def decoders_gen(tdf_defs, output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Generate rust TDF decoders", allow_abbrev=False)
     parser.add_argument("--json", required=True, type=str, help="TDF json description")
+    parser.add_argument("--extensions", type=str, help="Extension TDF json description")
     parser.add_argument("--out", required=True, type=str, help="Output folder")
     args = parser.parse_args()
 
     with open(args.json) as f:
-        definitions = json.load(f, parse_float=decimal.Decimal)
+        definitions: dict = json.load(f, parse_float=decimal.Decimal)
+    if args.extensions:
+        with open(args.extensions) as f:
+            extensions: dict = json.load(f, parse_float=decimal.Decimal)
+        definitions["structs"].update(extensions["structs"])
+        definitions["definitions"].update(extensions["definitions"])
+
     decoders_gen(definitions, args.out)
