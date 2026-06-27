@@ -403,7 +403,8 @@ fn copyright_bar(ui: &mut egui::Ui) {
                 ui.label(concat!(
                     "v",
                     env!("CARGO_PKG_VERSION"),
-                    " © Embeint Inc 2024"
+                    " © Embeint Inc 2024-",
+                    env!("INFUSE_DECODER_BUILD_YEAR")
                 ));
             });
 
