@@ -29,6 +29,15 @@ fn tdf_field_read_vla_to_str(cursor: &mut Cursor<&[u8]>, cursor_start: u64, size
     Ok(format!("{}", hex::encode(buf)))
 }
 
+#[allow(dead_code)]
+fn tdf_field_read_fixed_bytes_to_hex(cursor: &mut Cursor<&[u8]>, num: usize) ->  Result<String>
+{
+    let mut buf = vec![0u8; num];
+    cursor.read_exact(&mut buf)?;
+
+    Ok(format!("{}", hex::encode(buf)))
+}
+
 fn tdf_variable_item_count(size: u8, base_size: usize, item_size: usize) -> Result<usize>
 {
     if (size as usize) < base_size {
@@ -205,5 +214,16 @@ mod tests {
         let row = tdf_read_into_str(&25, bytes.len() as u8, &mut cursor).unwrap();
 
         assert_eq!(row, "0x12345678,9,abcdef");
+    }
+
+    #[test]
+    fn conversion_hex_byte_array_uses_single_field_formatting() {
+        let bytes = [0xab, 0xcd, 0xef];
+        let mut cursor = Cursor::new(bytes.as_slice());
+
+        let val = tdf_field_read_fixed_bytes_to_hex(&mut cursor, bytes.len()).unwrap();
+
+        assert_eq!(val, "abcdef");
+        assert_eq!(cursor.position(), bytes.len() as u64);
     }
 }

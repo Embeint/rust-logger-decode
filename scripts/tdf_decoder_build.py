@@ -178,6 +178,15 @@ def decoders_gen(tdf_defs, output):
     for _tdf_id, info in tdf_defs["definitions"].items():
         info["arrow_schema"] = arrow_schema_expr(info, tdf_defs["structs"])
 
+    def csv_fixed_hex_bytes(field):
+        conversion = field.get("conversion", {})
+        return (
+            field["type"] == "uint8_t"
+            and field.get("num", 0) > 0
+            and conversion.get("hex", False) is True
+            and "int" not in conversion
+        )
+
     def field_conv_func(field, name_prefix=None, variable_item=False):
         t = rust_type[field["type"]]
         func = f"cursor.read_{t[0]}"
@@ -227,6 +236,10 @@ def decoders_gen(tdf_defs, output):
                         f"tdf_field_read_string_to_str(cursor, cursor_start, {field['num']}, size)?",
                     )
                 ]
+            elif csv_fixed_hex_bytes(field):
+                return [
+                    (n, f"tdf_field_read_fixed_bytes_to_hex(cursor, {field['num']})?")
+                ]
             else:
                 if field["num"] == 0:
                     if variable_item:
@@ -241,6 +254,8 @@ def decoders_gen(tdf_defs, output):
 
     def field_fmt(field):
         if field["type"] == "char":
+            return ["{}"]
+        if csv_fixed_hex_bytes(field):
             return ["{}"]
         if "display" in field and field["display"].get("fmt", "") == "hex":
             if digits := field["display"].get("digits", None):
