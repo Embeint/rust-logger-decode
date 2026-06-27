@@ -370,6 +370,17 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
             let iot_bin_files: HashMap<u64, Vec<PathBuf>> =
                 infuse_decoder::fs_util::find_infuse_iot_files(&app.input_path.as_ref().unwrap())
                     .unwrap();
+
+            if iot_bin_files.is_empty() {
+                let input_folder = p.display().to_string();
+                app.runner_thread = Some(thread::spawn(move || {
+                    return std::result::Result::Err(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("No valid files found in '{}'", input_folder),
+                    ));
+                }));
+                return;
+            }
             iot_bin_files.get(&app.device_id).unwrap().clone()
         } else {
             vec![p.clone()]
@@ -580,7 +591,11 @@ impl eframe::App for MyApp {
                         self.output_files = Some(files);
                     }
                     Err(e) => {
-                        self.error_msg = Some(format!("{e:?}"));
+                        self.error_msg = Some(if e.kind() == std::io::ErrorKind::NotFound {
+                            e.to_string()
+                        } else {
+                            format!("{e:?}")
+                        });
                     }
                 }
             }
