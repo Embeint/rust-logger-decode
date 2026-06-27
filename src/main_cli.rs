@@ -45,7 +45,7 @@ impl infuse_decoder::ProgressReporter for IndicatifProgress {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// The path to the folder containing Infuse-IoT binary files
+    /// The path to the file/folder containing Infuse-IoT binary files
     #[arg(short, long, required = true)]
     path: std::path::PathBuf,
     /// Output path for decoded files
