@@ -672,30 +672,23 @@ fn gui_stats(app: &mut MyApp, ui: &mut egui::Ui) {
             });
 
             col_files.push_id(2, |ui| {
-                TableBuilder::new(ui)
+                ui.heading("Output Files");
+
+                let scroll_height = (ui.clip_rect().bottom() - ui.cursor().top()).max(0.0);
+                egui::ScrollArea::vertical()
                     .id_salt("OutputFiles")
-                    .striped(true)
-                    .column(Column::remainder())
-                    .header(5.0, |mut header| {
-                        header.col(|ui| {
-                            ui.heading("Output Files");
-                        });
-                    })
-                    .body(|mut body| {
+                    .auto_shrink([false, false])
+                    .max_height(scroll_height)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+
                         if let Some(files) = app.output_files.as_ref() {
-                            for file in files.iter() {
-                                body.row(5.0, |mut row| {
-                                    row.col(|ui| {
-                                        let name = format!(
-                                            "{}",
-                                            file.file_name().unwrap().to_str().unwrap()
-                                        );
-                                        ui.add(
-                                            egui::Label::new(name)
-                                                .wrap_mode(egui::TextWrapMode::Truncate),
-                                        );
-                                    });
-                                });
+                            for file in files {
+                                let name = file.file_name().unwrap().to_str().unwrap();
+                                ui.add(
+                                    egui::Label::new(name)
+                                        .wrap_mode(egui::TextWrapMode::Truncate),
+                                );
                             }
                         }
                     });
