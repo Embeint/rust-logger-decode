@@ -355,7 +355,6 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
             ui.label(egui::RichText::new(trimmed_label(&folder_str, 48)).code());
             ui.horizontal(|ui| {
                 let folder_button = ui.button("Folder");
-                app.mark_doc("1a", folder_button.rect);
                 if folder_button.clicked() {
                     if let Some(folder) = FileDialog::new()
                         .set_directory(app.output_folder.as_path())
@@ -365,7 +364,6 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
                     }
                 }
                 let open_button = ui.button("Open");
-                app.mark_doc("1b", open_button.rect);
                 if open_button.clicked() {
                     let _ = open_in_native_browser(app.output_folder.as_path());
                 };
@@ -383,7 +381,6 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
 
             ui.horizontal(|ui| {
                 let folder_button = ui.button("Folder");
-                app.mark_doc("2a", folder_button.rect);
                 if folder_button.clicked() {
                     if let Some(folder) = FileDialog::new().pick_folder() {
                         match infuse_decoder::fs_util::find_infuse_iot_files(&folder) {
@@ -400,7 +397,6 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
                     }
                 }
                 let file_button = ui.button("File");
-                app.mark_doc("2b", file_button.rect);
                 if file_button.clicked() {
                     if let Some(file) = FileDialog::new().pick_file() {
                         let mut h = HashMap::new();
@@ -493,11 +489,10 @@ fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
         });
         ui.separator();
         ui.vertical(|ui| {
-            ui.label("File Output Control");
-            let linearize = ui.checkbox(&mut app.linearize_output_files, "Linearize Output");
-            app.mark_doc("6", linearize.rect);
-            let max_readings_label = ui.label("Max Readings Per File");
-            app.mark_doc("7", max_readings_label.rect);
+            let file_output_control = ui.label("File Output Control");
+            app.mark_doc("6", file_output_control.rect);
+            ui.checkbox(&mut app.linearize_output_files, "Linearize Output");
+            ui.label("Max Readings Per File");
             ui.add_enabled_ui(app.linearize_output_files, |ui| {
                 ui.add(
                     egui::DragValue::new(&mut app.max_readings_per_output_file)
@@ -509,7 +504,7 @@ fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
         ui.separator();
         ui.vertical(|ui| {
             let time_format_label = ui.label("Time Output Format");
-            app.mark_doc("8", time_format_label.rect);
+            app.mark_doc("7", time_format_label.rect);
             ui.add_enabled_ui(app.output_format == OutputFormat::CSV, |ui| {
                 ui.radio_value(
                     &mut app.time_mode,
@@ -526,7 +521,7 @@ fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
         ui.separator();
         ui.vertical(|ui| {
             let block_size_label = ui.label("Input Block Size");
-            app.mark_doc("9", block_size_label.rect);
+            app.mark_doc("8", block_size_label.rect);
             egui::ComboBox::from_id_salt("Block Size")
                 .selected_text(format!("{:}", app.block_size))
                 .show_ui(ui, |ui| {
@@ -589,7 +584,7 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
             start_button,
         )
         .on_hover_text("Decode");
-    app.mark_doc("10", response.rect);
+    app.mark_doc("9", response.rect);
     if response.clicked() {
         // Reset progress bars
         app.progress_copy.reset();
