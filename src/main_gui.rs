@@ -89,6 +89,7 @@ impl infuse_decoder::ProgressReporter for SliderState {
 }
 
 struct MyApp {
+    doc_capture: Option<DocCapture>,
     time_mode: TimeOutput,
     output_format: OutputFormat,
     linearize_output_files: bool,
@@ -121,7 +122,34 @@ struct MyApp {
         >,
     >,
 }
+
+struct DocCapture {
+    markers: Vec<DocMarker>,
+    screenshot_requested: bool,
+    output_path: PathBuf,
+}
+
+struct DocMarker {
+    label: &'static str,
+    rect: egui::Rect,
+}
+
+impl DocCapture {
+    fn new() -> Self {
+        Self {
+            markers: Vec::new(),
+            screenshot_requested: false,
+            output_path: PathBuf::from("assets/configuration_options.png"),
+        }
+    }
+
+    fn reset_markers(&mut self) {
+        self.markers.clear();
+    }
+}
 use directories::UserDirs;
+
+const DOC_MARKER_GUTTER: f32 = 20.0;
 
 impl Default for MyApp {
     fn default() -> Self {
@@ -138,20 +166,38 @@ impl Default for MyApp {
         if default_out.is_none() {
             default_out = Some(PathBuf::from("."));
         }
+        let doc_capture = doc_capture_enabled().then(DocCapture::new);
+
+        let input_path = doc_capture.as_ref().map(|_| PathBuf::from("E:\\INFUSE"));
+        let mut input_files = None;
+        let mut device_id = 0;
+        let mut output_prefix = String::from("");
+
+        if doc_capture.is_some() {
+            device_id = 0x0000_0000_5aa5_f00d;
+            output_prefix = format!("{device_id:016x}");
+            let mut files = HashMap::new();
+            files.insert(
+                device_id,
+                vec![PathBuf::from("E:\\INFUSE\\infuse_cc0000000000000a.bin")],
+            );
+            input_files = Some(files);
+        }
 
         Self {
+            doc_capture,
             time_mode: TimeOutput::UTC,
             output_format: OutputFormat::CSV,
             linearize_output_files: true,
             decode_all_devices: false,
-            device_id: 0,
+            device_id,
             block_size: BlockSizeOptions::B512,
             max_readings_per_output_file: infuse_decoder::DEFAULT_MAX_READINGS_PER_OUTPUT_FILE,
             error_msg: None,
-            input_path: None,
-            input_files: None,
+            input_path,
+            input_files,
             output_folder: default_out.unwrap(),
-            output_prefix: String::from(""),
+            output_prefix,
             progress_copy: SliderState::new("Copying files"),
             progress_devices: SliderState::new("Devices decoded"),
             progress_decode: SliderState::new("Decoding files"),
@@ -162,6 +208,97 @@ impl Default for MyApp {
             runner_thread: None,
         }
     }
+}
+
+fn doc_capture_enabled() -> bool {
+    env::var_os("INFUSE_DECODER_DOC_SCREENSHOT").is_some()
+        || env::args().any(|arg| arg == "--docs-screenshot")
+}
+
+impl MyApp {
+    fn is_doc_capture(&self) -> bool {
+        self.doc_capture.is_some()
+    }
+
+    fn mark_doc(&mut self, label: &'static str, rect: egui::Rect) {
+        if let Some(doc_capture) = &mut self.doc_capture {
+            doc_capture.markers.push(DocMarker { label, rect });
+        }
+    }
+
+    fn handle_doc_capture(&mut self, ctx: &egui::Context) {
+        let Some(doc_capture) = &mut self.doc_capture else {
+            return;
+        };
+
+        let mut screenshot = None;
+        ctx.input(|input| {
+            for event in &input.events {
+                if let egui::Event::Screenshot { image, .. } = event {
+                    screenshot = Some(Arc::clone(image));
+                }
+            }
+        });
+
+        if let Some(image) = screenshot {
+            if let Err(err) = save_color_image(&doc_capture.output_path, &image) {
+                eprintln!(
+                    "Failed to save documentation screenshot to {}: {err}",
+                    doc_capture.output_path.display()
+                );
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("doc_markers"),
+        ));
+
+        for marker in &doc_capture.markers {
+            draw_doc_marker(&painter, marker);
+        }
+
+        if !doc_capture.screenshot_requested {
+            doc_capture.screenshot_requested = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            ctx.request_repaint();
+        }
+    }
+}
+
+fn draw_doc_marker(painter: &egui::Painter, marker: &DocMarker) {
+    let radius = 12.0;
+    let position = marker.rect.left_center() + egui::vec2(-14.0, 0.0);
+    painter.circle_filled(position, radius, egui::Color32::from_rgb(0, 0x89, 0x47));
+    painter.circle_stroke(
+        position,
+        radius,
+        egui::Stroke::new(1.5, egui::Color32::WHITE),
+    );
+    painter.text(
+        position,
+        egui::Align2::CENTER_CENTER,
+        marker.label,
+        egui::FontId::proportional(13.0),
+        egui::Color32::WHITE,
+    );
+}
+
+fn save_color_image(path: &std::path::Path, image: &egui::ColorImage) -> image::ImageResult<()> {
+    let mut rgba = Vec::with_capacity(image.pixels.len() * 4);
+    for pixel in &image.pixels {
+        rgba.extend_from_slice(&[pixel.r(), pixel.g(), pixel.b(), pixel.a()]);
+    }
+
+    image::save_buffer(
+        path,
+        &rgba,
+        image.size[0] as u32,
+        image.size[1] as u32,
+        image::ColorType::Rgba8,
+    )
 }
 
 fn trimmed_label(label: &String, max_len: usize) -> String {
@@ -213,10 +350,13 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
         .num_columns(2)
         .show(ui, |ui| {
             let folder_str = app.output_folder.display().to_string();
-            ui.label("Output folder");
+            let output_folder_label = ui.label("Output folder");
+            app.mark_doc("1", output_folder_label.rect);
             ui.label(egui::RichText::new(trimmed_label(&folder_str, 48)).code());
             ui.horizontal(|ui| {
-                if ui.button("Folder").clicked() {
+                let folder_button = ui.button("Folder");
+                app.mark_doc("1a", folder_button.rect);
+                if folder_button.clicked() {
                     if let Some(folder) = FileDialog::new()
                         .set_directory(app.output_folder.as_path())
                         .pick_folder()
@@ -224,7 +364,9 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
                         app.output_folder = folder;
                     }
                 }
-                if ui.button("Open").clicked() {
+                let open_button = ui.button("Open");
+                app.mark_doc("1b", open_button.rect);
+                if open_button.clicked() {
                     let _ = open_in_native_browser(app.output_folder.as_path());
                 };
             });
@@ -235,11 +377,14 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
                 None => String::from("N/A"),
             };
 
-            ui.label("Input folder/file");
+            let input_label = ui.label("Input folder/file");
+            app.mark_doc("2", input_label.rect);
             ui.label(egui::RichText::new(trimmed_label(&folder_str, 48)).code());
 
             ui.horizontal(|ui| {
-                if ui.button("Folder").clicked() {
+                let folder_button = ui.button("Folder");
+                app.mark_doc("2a", folder_button.rect);
+                if folder_button.clicked() {
                     if let Some(folder) = FileDialog::new().pick_folder() {
                         match infuse_decoder::fs_util::find_infuse_iot_files(&folder) {
                             Ok(files) => {
@@ -254,7 +399,9 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
                         }
                     }
                 }
-                if ui.button("File").clicked() {
+                let file_button = ui.button("File");
+                app.mark_doc("2b", file_button.rect);
+                if file_button.clicked() {
                     if let Some(file) = FileDialog::new().pick_file() {
                         let mut h = HashMap::new();
                         h.insert(0, vec![file.clone()]);
@@ -275,13 +422,14 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
 
             // Clear the selected paths if they no longer exist (SD card removed)
             if let Some(input) = &app.input_path {
-                if !input.exists() {
+                if !app.is_doc_capture() && !input.exists() {
                     app.input_path = None;
                     app.input_files = None;
                 }
             }
 
-            ui.label("Device ID");
+            let device_label = ui.label("Device ID");
+            app.mark_doc("3", device_label.rect);
             ui.horizontal(|ui| {
                 if let Some(file_list) = &app.input_files {
                     ui.add_enabled_ui(file_list.len() > 1 && !app.decode_all_devices, |ui| {
@@ -309,7 +457,8 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
             });
             ui.end_row();
 
-            ui.label("Output Prefix");
+            let prefix_label = ui.label("Output Prefix");
+            app.mark_doc("4", prefix_label.rect);
             ui.text_edit_singleline(&mut app.output_prefix);
             let extension = match app.output_format {
                 OutputFormat::CSV => "csv",
@@ -333,16 +482,22 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
 
 fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
+        if app.is_doc_capture() {
+            ui.add_space(DOC_MARKER_GUTTER);
+        }
         ui.vertical(|ui| {
-            ui.label("Output Format");
+            let output_format_label = ui.label("Output Format");
+            app.mark_doc("5", output_format_label.rect);
             ui.radio_value(&mut app.output_format, OutputFormat::CSV, "CSV");
             ui.radio_value(&mut app.output_format, OutputFormat::PARQUET, "Parquet");
         });
         ui.separator();
         ui.vertical(|ui| {
             ui.label("File Output Control");
-            ui.checkbox(&mut app.linearize_output_files, "Linearize Output");
-            ui.label("Max Readings Per File");
+            let linearize = ui.checkbox(&mut app.linearize_output_files, "Linearize Output");
+            app.mark_doc("6", linearize.rect);
+            let max_readings_label = ui.label("Max Readings Per File");
+            app.mark_doc("7", max_readings_label.rect);
             ui.add_enabled_ui(app.linearize_output_files, |ui| {
                 ui.add(
                     egui::DragValue::new(&mut app.max_readings_per_output_file)
@@ -353,7 +508,8 @@ fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
         });
         ui.separator();
         ui.vertical(|ui| {
-            ui.label("Time Output Format");
+            let time_format_label = ui.label("Time Output Format");
+            app.mark_doc("8", time_format_label.rect);
             ui.add_enabled_ui(app.output_format == OutputFormat::CSV, |ui| {
                 ui.radio_value(
                     &mut app.time_mode,
@@ -369,7 +525,8 @@ fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
         });
         ui.separator();
         ui.vertical(|ui| {
-            ui.label("Input Block Size");
+            let block_size_label = ui.label("Input Block Size");
+            app.mark_doc("9", block_size_label.rect);
             egui::ComboBox::from_id_salt("Block Size")
                 .selected_text(format!("{:}", app.block_size))
                 .show_ui(ui, |ui| {
@@ -426,13 +583,14 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
         .fill(egui::Color32::from_rgb(0, 0x89, 0x47))
         .min_size((100.0, ui.available_height()).into());
     ui.add_space(ui.available_width() - 100.0);
-    if ui
+    let response = ui
         .add_enabled(
             app.runner_thread.is_none() && app.input_path.is_some(),
             start_button,
         )
-        .clicked()
-    {
+        .on_hover_text("Decode");
+    app.mark_doc("10", response.rect);
+    if response.clicked() {
         // Reset progress bars
         app.progress_copy.reset();
         app.progress_devices.reset();
@@ -686,8 +844,7 @@ fn gui_stats(app: &mut MyApp, ui: &mut egui::Ui) {
                             for file in files {
                                 let name = file.file_name().unwrap().to_str().unwrap();
                                 ui.add(
-                                    egui::Label::new(name)
-                                        .wrap_mode(egui::TextWrapMode::Truncate),
+                                    egui::Label::new(name).wrap_mode(egui::TextWrapMode::Truncate),
                                 );
                             }
                         }
@@ -699,6 +856,10 @@ fn gui_stats(app: &mut MyApp, ui: &mut egui::Ui) {
 
 impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if let Some(doc_capture) = &mut self.doc_capture {
+            doc_capture.reset_markers();
+        }
+
         // Check if executing work has completed
         if let Some(handle) = self.runner_thread.as_ref() {
             if handle.is_finished() {
@@ -741,6 +902,9 @@ impl eframe::App for MyApp {
 
         egui::Panel::top("top_panel").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
+                if self.is_doc_capture() {
+                    ui.add_space(DOC_MARKER_GUTTER);
+                }
                 core_options(self, ui);
                 start_button(self, ui);
             });
@@ -771,6 +935,7 @@ impl eframe::App for MyApp {
             ui.add_space(5.0);
         });
         gui_stats(self, ui);
+        self.handle_doc_capture(ui.ctx());
     }
 }
 
@@ -789,9 +954,13 @@ fn load_icon() -> IconData {
 
 fn main() -> eframe::Result {
     let icon = load_icon();
+    let mut viewport = egui::viewport::ViewportBuilder::default().with_icon(icon);
+    if doc_capture_enabled() {
+        viewport = viewport.with_inner_size([1160.0, 680.0]);
+    }
 
     let options = eframe::NativeOptions {
-        viewport: egui::viewport::ViewportBuilder::default().with_icon(icon),
+        viewport,
         ..Default::default()
     };
 

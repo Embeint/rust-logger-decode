@@ -1,0 +1,2 @@
+[alias]
+doc-screenshot = "run --bin infuse_decoder -- --docs-screenshot"
