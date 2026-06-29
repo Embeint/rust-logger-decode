@@ -56,6 +56,16 @@ impl SliderState {
         let progress_bar = egui::ProgressBar::new(progress).show_percentage();
         ui.add_enabled(s.enabled, progress_bar);
     }
+
+    pub fn draw_count(self: &mut Self, ui: &mut egui::Ui) {
+        ui.label(self.label);
+
+        let s = self.state.lock().unwrap();
+        let progress = s.current as f32 / s.total as f32;
+        let progress_bar =
+            egui::ProgressBar::new(progress).text(format!("{} / {}", s.current, s.total));
+        ui.add_enabled(s.enabled, progress_bar);
+    }
 }
 
 impl infuse_decoder::ProgressReporter for SliderState {
@@ -92,6 +102,7 @@ struct MyApp {
     output_folder: PathBuf,
     output_prefix: String,
     progress_copy: SliderState,
+    progress_devices: SliderState,
     progress_decode: SliderState,
     progress_merge: SliderState,
     block_stats: Option<Vec<(blocks::BlockTypes, usize)>>,
@@ -142,6 +153,7 @@ impl Default for MyApp {
             output_folder: default_out.unwrap(),
             output_prefix: String::from(""),
             progress_copy: SliderState::new("Copying files"),
+            progress_devices: SliderState::new("Devices decoded"),
             progress_decode: SliderState::new("Decoding files"),
             progress_merge: SliderState::new("Merging output"),
             block_stats: None,
@@ -423,6 +435,7 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
     {
         // Reset progress bars
         app.progress_copy.reset();
+        app.progress_devices.reset();
         app.progress_decode.reset();
         app.progress_merge.reset();
         app.block_stats = None;
@@ -468,6 +481,11 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
             vec![(app.device_id, vec![input_path.clone()])]
         };
         let num_devices = device_jobs.len();
+        infuse_decoder::ProgressReporter::start(
+            &mut app.progress_devices,
+            "Devices decoded",
+            num_devices,
+        );
         let run_args = device_jobs
             .into_iter()
             .map(|(device_id, input_files)| infuse_decoder::RunArgs {
@@ -491,6 +509,7 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
                 merge_reporter: app.progress_merge.clone(),
             })
             .collect::<Vec<_>>();
+        let mut device_reporter = app.progress_devices.clone();
 
         app.runner_thread = Some(thread::spawn(move || {
             let mut combined_block_stats = HashMap::new();
@@ -503,6 +522,7 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
                 merge_block_stats(&mut combined_block_stats, block_stats);
                 merge_tdf_stats(&mut combined_tdf_stats, tdf_stats);
                 combined_output_files.append(&mut output_files);
+                infuse_decoder::ProgressReporter::increment(&mut device_reporter, 1);
             }
 
             Ok::<_, io::Error>((
@@ -746,6 +766,10 @@ impl eframe::App for MyApp {
                 .show(ui, |ui| {
                     self.progress_copy.draw(ui);
                     ui.end_row();
+                    if self.decode_all_devices {
+                        self.progress_devices.draw_count(ui);
+                        ui.end_row();
+                    }
                     self.progress_decode.draw(ui);
                     ui.end_row();
                     self.progress_merge.draw(ui);
