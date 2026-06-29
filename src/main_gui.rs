@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::env;
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{collections::HashMap, path::PathBuf};
@@ -81,6 +82,7 @@ struct MyApp {
     time_mode: TimeOutput,
     output_format: OutputFormat,
     linearize_output_files: bool,
+    decode_all_devices: bool,
     device_id: u64,
     block_size: BlockSizeOptions,
     max_readings_per_output_file: usize,
@@ -130,6 +132,7 @@ impl Default for MyApp {
             time_mode: TimeOutput::UTC,
             output_format: OutputFormat::CSV,
             linearize_output_files: true,
+            decode_all_devices: false,
             device_id: 0,
             block_size: BlockSizeOptions::B512,
             max_readings_per_output_file: infuse_decoder::DEFAULT_MAX_READINGS_PER_OUTPUT_FILE,
@@ -232,6 +235,8 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
                                 app.output_prefix = format!("{:016x}", app.device_id);
                                 app.input_path = Some(folder);
                                 app.input_files = Some(files);
+                                // Reset the 'decode all' option when the folder changes
+                                app.decode_all_devices = false;
                             }
                             _ => {}
                         }
@@ -247,6 +252,7 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
                         };
 
                         app.device_id = 0;
+                        app.decode_all_devices = false;
                         app.output_prefix = prefix.to_string();
                         app.input_path = Some(file);
                         app.input_files = Some(h);
@@ -264,21 +270,31 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
             }
 
             ui.label("Device ID");
-            if let Some(file_list) = &app.input_files {
-                ui.add_enabled_ui(file_list.len() > 1, |ui| {
-                    egui::ComboBox::from_label("")
-                        .selected_text(format!("{:016x}", app.device_id))
-                        .show_ui(ui, |ui| {
-                            for id in file_list.keys() {
-                                ui.selectable_value(
-                                    &mut app.device_id,
-                                    *id,
-                                    format!("{:016x}", id),
-                                );
-                            }
-                        });
-                });
-            }
+            ui.horizontal(|ui| {
+                if let Some(file_list) = &app.input_files {
+                    ui.add_enabled_ui(file_list.len() > 1 && !app.decode_all_devices, |ui| {
+                        egui::ComboBox::from_label("")
+                            .selected_text(format!("{:016x}", app.device_id))
+                            .show_ui(ui, |ui| {
+                                for id in file_list.keys() {
+                                    ui.selectable_value(
+                                        &mut app.device_id,
+                                        *id,
+                                        format!("{:016x}", id),
+                                    );
+                                }
+                            });
+                    });
+                    ui.add_enabled_ui(file_list.len() > 1, |ui| {
+                        ui.checkbox(&mut app.decode_all_devices, "All");
+                    });
+                } else {
+                    ui.add_enabled(
+                        false,
+                        egui::Checkbox::new(&mut app.decode_all_devices, "All"),
+                    );
+                }
+            });
             ui.end_row();
 
             ui.label("Output Prefix");
@@ -287,9 +303,17 @@ fn core_options(app: &mut MyApp, ui: &mut egui::Ui) {
                 OutputFormat::CSV => "csv",
                 OutputFormat::PARQUET => "parquet",
             };
+            let num_devices = app.input_files.as_ref().map_or(1, HashMap::len);
+            let example_prefix = output_prefix_for_device(
+                &app.output_prefix,
+                app.device_id,
+                app.device_id,
+                num_devices,
+                app.decode_all_devices,
+            );
             ui.label(format!(
                 "(e.g. {}_BATTERY_STATE.{extension})",
-                app.output_prefix
+                example_prefix
             ));
             ui.end_row();
         });
@@ -345,6 +369,46 @@ fn decode_options(app: &mut MyApp, ui: &mut egui::Ui) {
     });
 }
 
+fn output_prefix_for_device(
+    base_prefix: &str,
+    selected_device_id: u64,
+    device_id: u64,
+    num_devices: usize,
+    decode_all_devices: bool,
+) -> String {
+    if decode_all_devices && num_devices > 1 {
+        let selected_device_prefix = format!("{:016x}", selected_device_id);
+        if base_prefix.is_empty() || base_prefix == selected_device_prefix {
+            format!("{:016x}", device_id)
+        } else {
+            format!("{base_prefix}_{device_id:016x}")
+        }
+    } else {
+        base_prefix.to_string()
+    }
+}
+
+fn merge_block_stats(
+    combined: &mut HashMap<blocks::BlockTypes, usize>,
+    stats: HashMap<blocks::BlockTypes, usize>,
+) {
+    for (block_type, count) in stats {
+        *combined.entry(block_type).or_default() += count;
+    }
+}
+
+fn merge_tdf_stats(
+    combined: &mut HashMap<Option<u64>, HashMap<u16, usize>>,
+    stats: HashMap<Option<u64>, HashMap<u16, usize>>,
+) {
+    for (remote_id, tdfs) in stats {
+        let combined_tdfs = combined.entry(remote_id).or_default();
+        for (tdf_id, count) in tdfs {
+            *combined_tdfs.entry(tdf_id).or_default() += count;
+        }
+    }
+}
+
 fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
     let start_button = egui::Button::new("DECODE")
         .fill(egui::Color32::from_rgb(0, 0x89, 0x47))
@@ -365,14 +429,13 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
         app.tdf_stats = None;
         app.output_files = None;
 
-        let p = app.input_path.as_ref().unwrap();
-        let files = if p.is_dir() {
+        let input_path = app.input_path.as_ref().unwrap();
+        let device_jobs = if input_path.is_dir() {
             let iot_bin_files: HashMap<u64, Vec<PathBuf>> =
-                infuse_decoder::fs_util::find_infuse_iot_files(&app.input_path.as_ref().unwrap())
-                    .unwrap();
+                infuse_decoder::fs_util::find_infuse_iot_files(input_path).unwrap();
 
             if iot_bin_files.is_empty() {
-                let input_folder = p.display().to_string();
+                let input_folder = input_path.display().to_string();
                 app.runner_thread = Some(thread::spawn(move || {
                     return std::result::Result::Err(std::io::Error::new(
                         std::io::ErrorKind::NotFound,
@@ -381,28 +444,73 @@ fn start_button(app: &mut MyApp, ui: &mut egui::Ui) {
                 }));
                 return;
             }
-            iot_bin_files.get(&app.device_id).unwrap().clone()
+
+            let mut jobs: Vec<(u64, Vec<PathBuf>)> = if app.decode_all_devices {
+                iot_bin_files.into_iter().collect()
+            } else {
+                match iot_bin_files.get(&app.device_id) {
+                    Some(files) => vec![(app.device_id, files.clone())],
+                    None => {
+                        let device_id = app.device_id;
+                        app.runner_thread = Some(thread::spawn(move || {
+                            return std::result::Result::Err(std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                format!("No files found for device ID {device_id:016x}"),
+                            ));
+                        }));
+                        return;
+                    }
+                }
+            };
+            jobs.sort_by_key(|(device_id, _)| *device_id);
+            jobs
         } else {
-            vec![p.clone()]
+            vec![(app.device_id, vec![input_path.clone()])]
         };
+        let num_devices = device_jobs.len();
+        let run_args = device_jobs
+            .into_iter()
+            .map(|(device_id, input_files)| infuse_decoder::RunArgs {
+                device_id,
+                block_size: app.block_size as usize,
+                input_files,
+                output_folder: app.output_folder.clone(),
+                output_prefix: output_prefix_for_device(
+                    &app.output_prefix,
+                    app.device_id,
+                    device_id,
+                    num_devices,
+                    app.decode_all_devices,
+                ),
+                output_unix_time: app.time_mode == TimeOutput::UNIX,
+                output_format: app.output_format,
+                merge_output_files: app.linearize_output_files,
+                max_readings_per_output_file: app.max_readings_per_output_file,
+                copy_reporter: app.progress_copy.clone(),
+                decode_reporter: app.progress_decode.clone(),
+                merge_reporter: app.progress_merge.clone(),
+            })
+            .collect::<Vec<_>>();
 
-        let mut run_args = infuse_decoder::RunArgs {
-            device_id: app.device_id,
-            block_size: app.block_size as usize,
-            input_files: files,
-            output_folder: app.output_folder.clone(),
-            output_prefix: app.output_prefix.clone(),
-            output_unix_time: app.time_mode == TimeOutput::UNIX,
-            output_format: app.output_format,
-            merge_output_files: app.linearize_output_files,
-            max_readings_per_output_file: app.max_readings_per_output_file,
-            copy_reporter: app.progress_copy.clone(),
-            decode_reporter: app.progress_decode.clone(),
-            merge_reporter: app.progress_merge.clone(),
-        };
+        app.runner_thread = Some(thread::spawn(move || {
+            let mut combined_block_stats = HashMap::new();
+            let mut combined_tdf_stats = HashMap::new();
+            let mut combined_output_files = Vec::new();
 
-        // Spawn the thread to run the decode process
-        app.runner_thread = Some(thread::spawn(move || infuse_decoder::run(&mut run_args)));
+            for mut run_args in run_args {
+                let (block_stats, tdf_stats, mut output_files) =
+                    infuse_decoder::run(&mut run_args)?;
+                merge_block_stats(&mut combined_block_stats, block_stats);
+                merge_tdf_stats(&mut combined_tdf_stats, tdf_stats);
+                combined_output_files.append(&mut output_files);
+            }
+
+            Ok::<_, io::Error>((
+                combined_block_stats,
+                combined_tdf_stats,
+                combined_output_files,
+            ))
+        }));
     };
 }
 
