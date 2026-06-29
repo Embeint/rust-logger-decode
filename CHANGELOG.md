@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
+## [1.11.0] - 2026-06-xx
+
+ - Output file list is now scrollable
+ - Folder search improvements
+    - In addition to the SD card file naming convention, folders with one file per device are now supported
+    - Each file must have the 16 character hex ID somewhere in the filename
+ - Fix decoding crash when no files are found
+
 ## [1.10.0] - 2026-06-25
 
  - Nested TDF definitions inherit the parent field name in the CSV header column
