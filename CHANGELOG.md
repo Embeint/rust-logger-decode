@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org).
 
-## [1.11.0] - 2026-06-xx
+## [1.11.0] - 2026-06-30
 
  - Output file list is now scrollable
  - Folder search improvements
