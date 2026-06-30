@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning](https://semver.org).
     - Each file must have the 16 character hex ID somewhere in the filename
  - Fix decoding crash when no files are found
  - Improve CLI tool output on crashes
+ - CLI will set `--name` from the input `--path` if not explicitly provided
 
 ## [1.10.0] - 2026-06-25
 
