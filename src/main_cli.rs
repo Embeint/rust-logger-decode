@@ -90,11 +90,6 @@ fn print_run_error(err: &io::Error, device_id: u64, files: &[PathBuf], output_fo
 fn main() -> ExitCode {
     let args = Cli::parse();
 
-    if args.path.is_file() && !args.name.is_some() {
-        println!("Expected `--name` to be provided when `--path` is a file");
-        return ExitCode::FAILURE;
-    }
-
     // Handle single file supplied
     let iot_bin_files: HashMap<u64, Vec<PathBuf>> = if args.path.is_dir() {
         match infuse_decoder::fs_util::find_infuse_iot_files(&args.path) {
@@ -127,7 +122,20 @@ fn main() -> ExitCode {
                 }
             }
             None => {
-                format!("{device_id:016x}")
+                if args.path.is_file() {
+                    match args.path.file_stem().and_then(|stem| stem.to_str()) {
+                        Some(stem) => stem.to_string(),
+                        None => {
+                            eprintln!(
+                                "Failed to derive output name from input path '{}'",
+                                args.path.display()
+                            );
+                            return ExitCode::FAILURE;
+                        }
+                    }
+                } else {
+                    format!("{device_id:016x}")
+                }
             }
         };
 
