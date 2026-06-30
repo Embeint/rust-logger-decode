@@ -4,6 +4,7 @@ use infuse_decoder::args;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 #[macro_use]
 extern crate prettytable;
@@ -72,17 +73,37 @@ struct Cli {
     no_linearize_output: bool,
 }
 
-fn main() -> io::Result<()> {
+fn print_run_error(err: &io::Error, device_id: u64, files: &[PathBuf], output_folder: &PathBuf) {
+    eprintln!();
+    eprintln!("Decode failed");
+    eprintln!("=============");
+    eprintln!("Device ID     : {device_id:016x}");
+    eprintln!("Input files   : {}", files.len());
+    for file in files {
+        eprintln!("  - {}", file.display());
+    }
+    eprintln!("Output folder : {}", output_folder.display());
+    eprintln!("Error kind    : {:?}", err.kind());
+    eprintln!("Cause         : {err}");
+}
+
+fn main() -> ExitCode {
     let args = Cli::parse();
 
     if args.path.is_file() && !args.name.is_some() {
         println!("Expected `--name` to be provided when `--path` is a file");
-        return Ok(());
+        return ExitCode::FAILURE;
     }
 
     // Handle single file supplied
     let iot_bin_files: HashMap<u64, Vec<PathBuf>> = if args.path.is_dir() {
-        infuse_decoder::fs_util::find_infuse_iot_files(&args.path).unwrap()
+        match infuse_decoder::fs_util::find_infuse_iot_files(&args.path) {
+            Ok(files) => files,
+            Err(err) => {
+                eprintln!("Failed to scan input path '{}': {err}", args.path.display());
+                return ExitCode::FAILURE;
+            }
+        }
     } else {
         let mut f: HashMap<u64, Vec<PathBuf>> = HashMap::new();
         f.insert(0, vec![args.path.clone()]);
@@ -125,7 +146,13 @@ fn main() -> io::Result<()> {
             merge_reporter: IndicatifProgress::new(),
         };
 
-        let (block_stats, tdf_stats, _output_files) = infuse_decoder::run(&mut run_args)?;
+        let (block_stats, tdf_stats, _output_files) = match infuse_decoder::run(&mut run_args) {
+            Ok(result) => result,
+            Err(err) => {
+                print_run_error(&err, *device_id, files, &args.output);
+                return ExitCode::FAILURE;
+            }
+        };
 
         if args.verbose {
             for (remote_id, tdfs) in tdf_stats.iter() {
@@ -157,5 +184,5 @@ fn main() -> io::Result<()> {
             table.printstd();
         }
     }
-    Ok(())
+    ExitCode::SUCCESS
 }

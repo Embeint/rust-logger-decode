@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning](https://semver.org).
     - In addition to the SD card file naming convention, folders with one file per device are now supported
     - Each file must have the 16 character hex ID somewhere in the filename
  - Fix decoding crash when no files are found
+ - Improve CLI tool output on crashes
 
 ## [1.10.0] - 2026-06-25
 
