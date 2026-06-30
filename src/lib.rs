@@ -161,7 +161,14 @@ pub fn run<T: ProgressReporter + Clone + Send + 'static>(
 
     let (merged_file, size) = if args.input_files.len() == 1 {
         let f: PathBuf = args.input_files.get(0).unwrap().clone();
-        let s = f.metadata().unwrap().len() as usize;
+        if !f.exists() {
+            return io::Result::Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Input file does not exist",
+            ));
+        }
+        let m = f.metadata()?;
+        let s = m.len() as usize;
         (f, s)
     } else {
         let (f, s) = merge_input_files(
