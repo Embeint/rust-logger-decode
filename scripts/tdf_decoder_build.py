@@ -43,6 +43,39 @@ arrow_float_type = {
     "float64_t": "DataType::Float64",
 }
 
+integer_range = {
+    "int8_t": (-(2**7), 2**7 - 1),
+    "uint8_t": (0, 2**8 - 1),
+    "int16_t": (-(2**15), 2**15 - 1),
+    "uint16_t": (0, 2**16 - 1),
+    "int32_t": (-(2**31), 2**31 - 1),
+    "uint32_t": (0, 2**32 - 1),
+    "int64_t": (-(2**63), 2**63 - 1),
+    "uint64_t": (0, 2**64 - 1),
+}
+
+rust_int_range = {
+    "i8": (-(2**7), 2**7 - 1),
+    "u8": (0, 2**8 - 1),
+    "i16": (-(2**15), 2**15 - 1),
+    "u16": (0, 2**16 - 1),
+    "i32": (-(2**31), 2**31 - 1),
+    "u32": (0, 2**32 - 1),
+    "i64": (-(2**63), 2**63 - 1),
+    "u64": (0, 2**64 - 1),
+}
+
+arrow_rust_int_type = {
+    "i8": "DataType::Int8",
+    "u8": "DataType::UInt8",
+    "i16": "DataType::Int16",
+    "u16": "DataType::UInt16",
+    "i32": "DataType::Int32",
+    "u32": "DataType::UInt32",
+    "i64": "DataType::Int64",
+    "u64": "DataType::UInt64",
+}
+
 
 def rust_str(value):
     return json.dumps(value)
@@ -60,6 +93,57 @@ def indent_block(value, indent):
     return "\n".join(f"{pad}{line}" for line in value.splitlines())
 
 
+def integer_type_for_range(min_val, max_val):
+    if min_val < 0:
+        candidates = ("i8", "i16", "i32", "i64")
+    else:
+        candidates = ("u8", "u16", "u32", "u64")
+
+    for type_name in candidates:
+        type_min, type_max = rust_int_range[type_name]
+        if type_min <= min_val and max_val <= type_max:
+            return type_name
+
+    return None
+
+
+def decimal_value(value):
+    if isinstance(value, decimal.Decimal):
+        return value
+    return decimal.Decimal(value)
+
+
+def integral_decimal(value):
+    value = decimal_value(value)
+    if value == value.to_integral_value():
+        return int(value)
+    return None
+
+
+def raw_integer_range(field):
+    conv = field.get("conversion", {})
+    if "int" in conv:
+        byte_len = field["num"]
+        return (0, 2 ** (byte_len * 8) - 1)
+    return integer_range.get(field["type"])
+
+
+def integer_type_after_conversion(field):
+    value_range = raw_integer_range(field)
+    if value_range is None:
+        return None
+
+    conv = field.get("conversion", {})
+    m = integral_decimal(conv.get("m", 1))
+    c = integral_decimal(conv.get("c", 0))
+    if m is None or c is None:
+        return None
+
+    min_val, max_val = value_range
+    converted = (min_val * m + c, max_val * m + c)
+    return integer_type_for_range(min(converted), max(converted))
+
+
 def arrow_scalar_type(field):
     c_type = field["type"]
     conv = field.get("conversion", {})
@@ -68,6 +152,9 @@ def arrow_scalar_type(field):
         return "DataType::Utf8"
 
     if "m" in conv or "c" in conv:
+        int_type = integer_type_after_conversion(field)
+        if int_type is not None:
+            return arrow_rust_int_type[int_type]
         return "DataType::Float64"
 
     if "int" in conv:
@@ -115,7 +202,7 @@ def arrow_data_type_expr(field, structs, indent):
 
     num = field["num"]
     if num == 0:
-        if c_type == "uint8_t":
+        if c_type == "uint8_t" and not conv:
             return "DataType::Binary"
         return (
             "DataType::List(Arc::new(Field::new_list_field(\n"
@@ -124,7 +211,7 @@ def arrow_data_type_expr(field, structs, indent):
             f"{' ' * indent})))"
         )
 
-    if c_type == "uint8_t":
+    if c_type == "uint8_t" and not conv:
         return f"DataType::FixedSizeList(Arc::new(Field::new_list_field(DataType::UInt8, false)), {num})"
     return (
         "DataType::FixedSizeList(Arc::new(Field::new_list_field(\n"
@@ -405,6 +492,9 @@ def decoders_gen(tdf_defs, output):
     def rust_type_after_conversion(field):
         conv = field.get("conversion", {})
         if "m" in conv or "c" in conv:
+            int_type = integer_type_after_conversion(field)
+            if int_type is not None:
+                return int_type
             return "f64"
         if field["type"] == "char":
             return "String"
@@ -445,9 +535,29 @@ def decoders_gen(tdf_defs, output):
                 func = f"cursor.read_{t_name}::<{e}>()?"
 
             if "m" in c or "c" in c:
+                int_type = integer_type_after_conversion(field)
+                if int_type is not None:
+                    scale = integral_decimal(c.get("m", 1))
+                    offset = integral_decimal(c.get("c", 0))
+
+                    if scale == 0:
+                        func = f"({offset} as {int_type})"
+                    else:
+                        func = f"({func} as {int_type})"
+                        if scale != 1:
+                            func += f" * {scale}"
+                        if offset > 0:
+                            func += f" + {offset}"
+                        elif offset < 0:
+                            func += f" - {-offset}"
+                    return func
+
                 func += " as f64"
-                if "m" in c and c["m"] != 0:
+                if "m" in c and c["m"] != 1:
                     val = c["m"]
+                    if val == 0:
+                        func += " * 0.0"
+                        return func
                     inverse_ratio = (1 / val).as_integer_ratio()
                     if inverse_ratio[1] == 1:
                         func += f" / {inverse_ratio[0]}.0"
@@ -519,7 +629,7 @@ def decoders_gen(tdf_defs, output):
                 "read": f"tdf_field_read_string_to_string(cursor, cursor_start, {num or 0}, size)?",
             }
 
-        if num == 0 and c_type == "uint8_t" and "int" not in conv:
+        if num == 0 and c_type == "uint8_t" and not conv:
             return {
                 "kind": "binary",
                 "path": path,
