@@ -480,7 +480,7 @@ pub fn tdf_parquet_schema(tdf_id: u16) -> Option<SchemaRef> {
             Field::new("earfcn", DataType::UInt32, false),
             Field::new("status", DataType::UInt8, false),
             Field::new("tech", DataType::UInt8, false),
-            Field::new("rsrp", DataType::Float64, false),
+            Field::new("rsrp", DataType::Int16, false),
             Field::new("rsrq", DataType::Int8, false),
         ]))),
         22 => Some(Arc::new(Schema::new(vec![
@@ -595,7 +595,7 @@ pub fn tdf_parquet_schema(tdf_id: u16) -> Option<SchemaRef> {
                 false,
             ),
             Field::new("earfcn", DataType::UInt32, false),
-            Field::new("rsrp", DataType::Float64, false),
+            Field::new("rsrp", DataType::Int16, false),
             Field::new("rsrq", DataType::Int8, false),
             Field::new(
                 "neighbours",
@@ -604,7 +604,7 @@ pub fn tdf_parquet_schema(tdf_id: u16) -> Option<SchemaRef> {
                         Field::new("earfcn", DataType::UInt32, false),
                         Field::new("pci", DataType::UInt16, false),
                         Field::new("time_diff", DataType::Float64, false),
-                        Field::new("rsrp", DataType::Float64, false),
+                        Field::new("rsrp", DataType::Int16, false),
                         Field::new("rsrq", DataType::Int8, false),
                     ])),
                     false,
@@ -2870,7 +2870,7 @@ pub struct Tdf21LteConnStatusBuilder {
     earfcn: Vec<u32>,
     status: Vec<u8>,
     tech: Vec<u8>,
-    rsrp: Vec<f64>,
+    rsrp: Vec<i16>,
     rsrq: Vec<i8>,
 }
 
@@ -2916,7 +2916,7 @@ impl Tdf21LteConnStatusBuilder {
         self.earfcn.push(cursor.read_u32::<LittleEndian>()?);
         self.status.push(cursor.read_u8()?);
         self.tech.push(cursor.read_u8()?);
-        self.rsrp.push(cursor.read_u8()? as f64 / -1.0);
+        self.rsrp.push((cursor.read_u8()? as i16) * -1);
         self.rsrq.push(cursor.read_i8()?);
 
         finish_tdf_read(cursor, cursor_start, size)
@@ -2948,7 +2948,7 @@ impl Tdf21LteConnStatusBuilder {
             Arc::new(UInt32Array::from(std::mem::take(&mut self.earfcn))) as ArrayRef,
             Arc::new(UInt8Array::from(std::mem::take(&mut self.status))) as ArrayRef,
             Arc::new(UInt8Array::from(std::mem::take(&mut self.tech))) as ArrayRef,
-            Arc::new(Float64Array::from(std::mem::take(&mut self.rsrp))) as ArrayRef,
+            Arc::new(Int16Array::from(std::mem::take(&mut self.rsrp))) as ArrayRef,
             Arc::new(Int8Array::from(std::mem::take(&mut self.rsrq))) as ArrayRef,
         ];
 
@@ -3731,13 +3731,13 @@ pub struct Tdf34LteTacCellsBuilder {
     cell_eci: Vec<u32>,
     cell_tac: Vec<u16>,
     earfcn: Vec<u32>,
-    rsrp: Vec<f64>,
+    rsrp: Vec<i16>,
     rsrq: Vec<i8>,
     neighbours_offsets: Vec<i32>,
     neighbours_earfcn: Vec<u32>,
     neighbours_pci: Vec<u16>,
     neighbours_time_diff: Vec<f64>,
-    neighbours_rsrp: Vec<f64>,
+    neighbours_rsrp: Vec<i16>,
     neighbours_rsrq: Vec<i8>,
 }
 
@@ -3793,7 +3793,7 @@ impl Tdf34LteTacCellsBuilder {
         self.cell_eci.push(cursor.read_u32::<LittleEndian>()?);
         self.cell_tac.push(cursor.read_u16::<LittleEndian>()?);
         self.earfcn.push(cursor.read_u32::<LittleEndian>()?);
-        self.rsrp.push(cursor.read_u8()? as f64 / -1.0);
+        self.rsrp.push((cursor.read_u8()? as i16) * -1);
         self.rsrq.push(cursor.read_i8()?);
         {
             let bytes_remaining = crate::decoders::vla_bytes_remaining(cursor, cursor_start, size)?;
@@ -3810,7 +3810,7 @@ impl Tdf34LteTacCellsBuilder {
                 self.neighbours_pci.push(cursor.read_u16::<LittleEndian>()?);
                 self.neighbours_time_diff
                     .push(cursor.read_u16::<LittleEndian>()? as f64 / 1000.0);
-                self.neighbours_rsrp.push(cursor.read_u8()? as f64 / -1.0);
+                self.neighbours_rsrp.push((cursor.read_u8()? as i16) * -1);
                 self.neighbours_rsrq.push(cursor.read_i8()?);
             }
             self.neighbours_offsets
@@ -3844,7 +3844,7 @@ impl Tdf34LteTacCellsBuilder {
                 None,
             )?) as ArrayRef,
             Arc::new(UInt32Array::from(std::mem::take(&mut self.earfcn))) as ArrayRef,
-            Arc::new(Float64Array::from(std::mem::take(&mut self.rsrp))) as ArrayRef,
+            Arc::new(Int16Array::from(std::mem::take(&mut self.rsrp))) as ArrayRef,
             Arc::new(Int8Array::from(std::mem::take(&mut self.rsrq))) as ArrayRef,
             {
                 let offsets = std::mem::replace(&mut self.neighbours_offsets, vec![0]);
@@ -3856,7 +3856,7 @@ impl Tdf34LteTacCellsBuilder {
                             Field::new("earfcn", DataType::UInt32, false),
                             Field::new("pci", DataType::UInt16, false),
                             Field::new("time_diff", DataType::Float64, false),
-                            Field::new("rsrp", DataType::Float64, false),
+                            Field::new("rsrp", DataType::Int16, false),
                             Field::new("rsrq", DataType::Int8, false),
                         ]),
                         vec![
@@ -3868,9 +3868,8 @@ impl Tdf34LteTacCellsBuilder {
                             Arc::new(Float64Array::from(std::mem::take(
                                 &mut self.neighbours_time_diff,
                             ))) as ArrayRef,
-                            Arc::new(Float64Array::from(std::mem::take(
-                                &mut self.neighbours_rsrp,
-                            ))) as ArrayRef,
+                            Arc::new(Int16Array::from(std::mem::take(&mut self.neighbours_rsrp)))
+                                as ArrayRef,
                             Arc::new(Int8Array::from(std::mem::take(&mut self.neighbours_rsrq)))
                                 as ArrayRef,
                         ],
