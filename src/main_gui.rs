@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{collections::HashMap, path::PathBuf};
 
+use chrono::{Datelike, Utc};
 use eframe::egui::{self, IconData};
 use egui_extras::{Column, TableBuilder};
 use image::GenericImageView;
@@ -692,11 +693,10 @@ fn copyright_bar(ui: &mut egui::Ui) {
         .num_columns(2)
         .show(ui, |ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::LEFT), |ui| {
-                ui.label(concat!(
-                    "v",
+                ui.label(format!(
+                    "v{} © Embeint Inc 2024-{}",
                     env!("CARGO_PKG_VERSION"),
-                    " © Embeint Inc 2024-",
-                    env!("INFUSE_DECODER_BUILD_YEAR")
+                    Utc::now().year()
                 ));
             });
 
