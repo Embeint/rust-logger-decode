@@ -7,6 +7,7 @@ This project adheres to [Semantic Versioning](https://semver.org).
 ## [1.12.0] - xx-xx-xx
 
  - Tighten Parquet output types for field conversion
+ - Fix decoding minimally sized last TDF
 
 ## [1.11.0] - 2026-06-30
 

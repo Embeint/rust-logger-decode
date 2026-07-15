@@ -145,7 +145,7 @@ pub fn block_decode<T: TdfOutput>(
     let mut cursor = Cursor::new(block);
     let mut buffer_time: i64 = 0;
 
-    while block.len() - cursor.position() as usize > 4 {
+    while block.len() - cursor.position() as usize > 3 {
         let header = cursor.read_u16::<LittleEndian>()?;
         if header == 0xFFFF || header == 0x0000 {
             break;
