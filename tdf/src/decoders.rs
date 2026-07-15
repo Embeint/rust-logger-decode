@@ -62,6 +62,7 @@ pub fn tdf_name(tdf_id: &u16) -> String {
         59 => String::from("PCM_16BIT_CHAN_RIGHT"),
         60 => String::from("PCM_16BIT_CHAN_DUAL"),
         61 => String::from("KVS_VALUE_CHANGED"),
+        62 => String::from("AMBIENT_PRESSURE"),
         _ => format!("{}", tdf_id),
     }
 }

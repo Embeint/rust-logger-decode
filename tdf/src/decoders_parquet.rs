@@ -138,6 +138,7 @@ pub fn tdf_parquet_schemas() -> Vec<(u16, &'static str, SchemaRef)> {
         (59, "PCM_16BIT_CHAN_RIGHT", tdf_parquet_schema(59).unwrap()),
         (60, "PCM_16BIT_CHAN_DUAL", tdf_parquet_schema(60).unwrap()),
         (61, "KVS_VALUE_CHANGED", tdf_parquet_schema(61).unwrap()),
+        (62, "AMBIENT_PRESSURE", tdf_parquet_schema(62).unwrap()),
     ]
 }
 
@@ -203,6 +204,7 @@ pub fn tdf_parquet_has_schema(tdf_id: u16) -> bool {
         59 => true,
         60 => true,
         61 => true,
+        62 => true,
         _ => false,
     }
 }
@@ -808,6 +810,11 @@ pub fn tdf_parquet_schema(tdf_id: u16) -> Option<SchemaRef> {
             Field::new("key", DataType::UInt16, false),
             Field::new("value", DataType::Binary, false),
         ]))),
+        62 => Some(Arc::new(Schema::new(vec![
+            timestamp_field(),
+            sample_idx_field(),
+            Field::new("pressure", DataType::Float64, false),
+        ]))),
         _ => None,
     }
 }
@@ -994,6 +1001,9 @@ pub fn tdf_parquet_builder(tdf_id: u16, capacity: usize) -> Option<TdfParquetBat
         61 => Some(TdfParquetBatchBuilder::Tdf61KvsValueChanged(
             Tdf61KvsValueChangedBuilder::new(capacity),
         )),
+        62 => Some(TdfParquetBatchBuilder::Tdf62AmbientPressure(
+            Tdf62AmbientPressureBuilder::new(capacity),
+        )),
         _ => None,
     }
 }
@@ -1065,6 +1075,7 @@ pub enum TdfParquetBatchBuilder {
     Tdf59Pcm16bitChanRight(Tdf59Pcm16bitChanRightBuilder),
     Tdf60Pcm16bitChanDual(Tdf60Pcm16bitChanDualBuilder),
     Tdf61KvsValueChanged(Tdf61KvsValueChangedBuilder),
+    Tdf62AmbientPressure(Tdf62AmbientPressureBuilder),
 }
 
 impl TdfParquetBatchBuilder {
@@ -1130,6 +1141,7 @@ impl TdfParquetBatchBuilder {
             Self::Tdf59Pcm16bitChanRight(builder) => builder.schema(),
             Self::Tdf60Pcm16bitChanDual(builder) => builder.schema(),
             Self::Tdf61KvsValueChanged(builder) => builder.schema(),
+            Self::Tdf62AmbientPressure(builder) => builder.schema(),
         }
     }
 
@@ -1195,6 +1207,7 @@ impl TdfParquetBatchBuilder {
             Self::Tdf59Pcm16bitChanRight(builder) => builder.rows(),
             Self::Tdf60Pcm16bitChanDual(builder) => builder.rows(),
             Self::Tdf61KvsValueChanged(builder) => builder.rows(),
+            Self::Tdf62AmbientPressure(builder) => builder.rows(),
         }
     }
 
@@ -1265,6 +1278,7 @@ impl TdfParquetBatchBuilder {
             Self::Tdf59Pcm16bitChanRight(builder) => builder.append(meta, size, cursor),
             Self::Tdf60Pcm16bitChanDual(builder) => builder.append(meta, size, cursor),
             Self::Tdf61KvsValueChanged(builder) => builder.append(meta, size, cursor),
+            Self::Tdf62AmbientPressure(builder) => builder.append(meta, size, cursor),
         }
     }
 
@@ -1330,6 +1344,7 @@ impl TdfParquetBatchBuilder {
             Self::Tdf59Pcm16bitChanRight(builder) => builder.finish_batch(),
             Self::Tdf60Pcm16bitChanDual(builder) => builder.finish_batch(),
             Self::Tdf61KvsValueChanged(builder) => builder.finish_batch(),
+            Self::Tdf62AmbientPressure(builder) => builder.finish_batch(),
         }
     }
 }
@@ -5585,6 +5600,60 @@ impl Tdf61KvsValueChangedBuilder {
             Arc::new(BinaryArray::from_iter_values(std::mem::take(
                 &mut self.value,
             ))) as ArrayRef,
+        ];
+
+        RecordBatch::try_new(schema, columns)
+    }
+}
+
+pub struct Tdf62AmbientPressureBuilder {
+    row_timestamp: Vec<Option<i64>>,
+    row_sample_idx: Vec<Option<u16>>,
+    pressure: Vec<f64>,
+}
+
+impl Tdf62AmbientPressureBuilder {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            row_timestamp: Vec::with_capacity(capacity),
+            row_sample_idx: Vec::with_capacity(capacity),
+            pressure: Vec::with_capacity(capacity),
+        }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        tdf_parquet_schema(62).unwrap()
+    }
+
+    pub fn rows(&self) -> usize {
+        self.row_timestamp.len()
+    }
+
+    pub fn append(
+        &mut self,
+        meta: TdfParquetRowMeta,
+        size: u8,
+        cursor: &mut Cursor<&[u8]>,
+    ) -> Result<()> {
+        let cursor_start = cursor.position();
+
+        self.row_timestamp.push(meta.time_unix_micros);
+        self.row_sample_idx.push(meta.sample_idx);
+        self.pressure
+            .push(cursor.read_u32::<LittleEndian>()? as f64 / 1000.0);
+
+        finish_tdf_read(cursor, cursor_start, size)
+    }
+
+    pub fn finish_batch(&mut self) -> std::result::Result<RecordBatch, ArrowError> {
+        let schema = self.schema();
+        let columns = vec![
+            Arc::new(
+                TimestampMicrosecondArray::from(std::mem::take(&mut self.row_timestamp))
+                    .with_timezone("+00:00"),
+            ) as ArrayRef,
+            Arc::new(UInt16Array::from(std::mem::take(&mut self.row_sample_idx))) as ArrayRef,
+            Arc::new(Float64Array::from(std::mem::take(&mut self.pressure))) as ArrayRef,
         ];
 
         RecordBatch::try_new(schema, columns)
