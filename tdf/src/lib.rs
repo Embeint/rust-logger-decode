@@ -240,6 +240,13 @@ pub fn block_decode<T: TdfOutput>(
             }
             TDF_ARRAY_IDX => {
                 array_num = cursor.read_u8()?;
+                if array_num == 0 {
+                    // Invalid header, remainder of block can't be trusted
+                    return std::io::Result::Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Time array of 0 elements",
+                    ));
+                }
                 array_sample_idx = Some(cursor.read_u16::<LittleEndian>()?);
             }
             _ => {

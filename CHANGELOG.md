@@ -8,6 +8,7 @@ This project adheres to [Semantic Versioning](https://semver.org).
 
  - Tighten Parquet output types for field conversion
  - Fix decoding minimally sized last TDF
+ - Zero length index arrays are now rejected by the decoder
 
 ## [1.11.0] - 2026-06-30
 
