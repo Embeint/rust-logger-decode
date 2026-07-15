@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 from numpy import format_float_positional as float_format
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -878,6 +879,7 @@ def decoders_gen(tdf_defs, output):
             )
             f.write(rendered)
             f.write(os.linesep)
+        subprocess.run(["rustfmt", path], check=True)
 
     write_rendered(common_output, common_template)
     write_rendered(csv_output, csv_template)
