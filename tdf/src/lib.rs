@@ -144,6 +144,7 @@ pub fn block_decode<T: TdfOutput>(
 ) -> std::io::Result<()> {
     let mut cursor = Cursor::new(block);
     let mut buffer_time: i64 = 0;
+    let mut has_absolute_time = false;
 
     while block.len() - cursor.position() as usize > 3 {
         let header = cursor.read_u16::<LittleEndian>()?;
@@ -170,9 +171,26 @@ pub fn block_decode<T: TdfOutput>(
             TDF_TIME_GLOBAL => {
                 buffer_time = ((cursor.read_u32::<LittleEndian>()? as i64) << 16)
                     + (cursor.read_u16::<LittleEndian>()? as i64);
+                has_absolute_time = true;
             }
-            TDF_TIME_RELATIVE_U16 => buffer_time += cursor.read_u16::<LittleEndian>()? as i64,
-            TDF_TIME_RELATIVE_S24 => buffer_time += cursor.read_i24::<LittleEndian>()? as i64,
+            TDF_TIME_RELATIVE_U16 => {
+                if !has_absolute_time {
+                    return Err(std::io::Error::new(
+                        ErrorKind::InvalidData,
+                        "Relative timestamp encountered before an absolute timestamp",
+                    ));
+                }
+                buffer_time += cursor.read_u16::<LittleEndian>()? as i64;
+            }
+            TDF_TIME_RELATIVE_S24 => {
+                if !has_absolute_time {
+                    return Err(std::io::Error::new(
+                        ErrorKind::InvalidData,
+                        "Extended relative timestamp encountered before an absolute timestamp",
+                    ));
+                }
+                buffer_time += cursor.read_i24::<LittleEndian>()? as i64;
+            }
             _ => {
                 panic!("How?");
             }
@@ -290,4 +308,96 @@ pub fn block_decode<T: TdfOutput>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct TestOutput {
+        written: HashMap<(Option<u64>, u16), usize>,
+    }
+
+    impl TdfOutput for TestOutput {
+        fn write(
+            &mut self,
+            remote_id: Option<u64>,
+            tdf_id: u16,
+            _tdf_time: i64,
+            _tdf_idx: Option<u16>,
+            size: u8,
+            cursor: &mut Cursor<&[u8]>,
+        ) -> std::io::Result<()> {
+            let mut buf = vec![0; size as usize];
+            cursor.read_exact(&mut buf)?;
+            *self.written.entry((remote_id, tdf_id)).or_default() += 1;
+            Ok(())
+        }
+
+        fn iter_written(&self) -> impl Iterator<Item = (&(Option<u64>, u16), &usize)> {
+            self.written.iter()
+        }
+
+        fn written(&self, remote_id: Option<u64>, tdf_id: u16) -> usize {
+            self.written.get(&(remote_id, tdf_id)).copied().unwrap_or(0)
+        }
+
+        fn output_path(self: &Self, _remote_id: Option<u64>, _tdf_id: u16) -> Option<PathBuf> {
+            None
+        }
+    }
+
+    #[test]
+    fn rejects_relative_u16_timestamp_before_absolute_timestamp() {
+        let block = [
+            0xE7, 0x83, // id=999, relative u16 timestamp
+            0x01, // size
+            0x34, 0x12, // relative timestamp
+            0xAA, // payload
+        ];
+        let mut output = TestOutput::default();
+
+        let error = block_decode(None, &block, &mut output).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+        assert_eq!(output.written(None, 999), 0);
+    }
+
+    #[test]
+    fn rejects_relative_s24_timestamp_before_absolute_timestamp() {
+        let block = [
+            0xE7, 0xC3, // id=999, relative s24 timestamp
+            0x01, // size
+            0x01, 0x02, 0x03, // relative timestamp
+            0xAA, // payload
+        ];
+        let mut output = TestOutput::default();
+
+        let error = block_decode(None, &block, &mut output).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+        assert_eq!(output.written(None, 999), 0);
+    }
+
+    #[test]
+    fn accepts_relative_timestamp_after_absolute_timestamp() {
+        let block = [
+            0xE7, 0x43, // id=999, global timestamp
+            0x01, // size
+            0x78, 0x56, 0x34, 0x12, // timestamp seconds
+            0xBC, 0x9A, // timestamp subsecond
+            0xAA, // payload
+            0xE7, 0x83, // id=999, relative u16 timestamp
+            0x01, // size
+            0x34, 0x12, // relative timestamp
+            0xBB, // payload
+        ];
+        let mut output = TestOutput::default();
+
+        block_decode(None, &block, &mut output).unwrap();
+
+        assert_eq!(output.written(None, 999), 2);
+    }
 }
