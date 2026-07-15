@@ -275,7 +275,7 @@ fn draw_doc_marker(painter: &egui::Painter, marker: &DocMarker) {
     painter.circle_stroke(
         position,
         radius,
-        egui::Stroke::new(1.5, egui::Color32::WHITE),
+        egui::Stroke::new(1.5_f32, egui::Color32::WHITE),
     );
     painter.text(
         position,
