@@ -199,6 +199,7 @@ pub fn tdf_fields(tdf_id: &u16) -> Vec<&'static str> {
         59 => vec!["val"],
         60 => vec!["left", "right"],
         61 => vec!["key", "value"],
+        62 => vec!["pressure"],
         _ => vec!["unknown"],
     }
 }
@@ -777,6 +778,11 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
                 "{},{}",
                 cursor.read_u16::<LittleEndian>()?,
                 tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
+            )),
+        62 =>
+            Ok(format!(
+                "{}",
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
             )),
         _ => {
             let mut buf = vec![0; size as usize];
