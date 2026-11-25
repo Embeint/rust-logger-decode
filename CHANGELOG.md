@@ -10,6 +10,9 @@ This project adheres to [Semantic Versioning](https://semver.org).
  - Fix decoding minimally sized last TDF
  - Zero length index arrays are now rejected by the decoder
  - Relative timestamps without a preceding absolute timestamp are now rejected
+ - CSV decoding is approximately 4x faster, with identical output
+    - Merging output files is no longer a bottleneck, so skipping the merge step saves less time
+    - Larger improvement on machines with fewer CPU cores
 
 ## [1.11.0] - 2026-06-30
 
