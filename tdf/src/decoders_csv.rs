@@ -255,6 +255,12 @@ fn tdf_variable_item_count(size: u8, base_size: usize, item_size: usize) -> Resu
     Ok(bytes_remaining / item_size)
 }
 
+#[inline(always)]
+fn write_int<I: itoa::Integer>(out: &mut Vec<u8>, val: I) {
+    let mut buf = itoa::Buffer::new();
+    out.extend_from_slice(buf.format(val).as_bytes());
+}
+
 /// Decode a TDF and append its CSV representation to `out`.
 ///
 /// On error, `out` may contain a partially written row.
@@ -270,30 +276,30 @@ pub fn tdf_write_csv(
         1 => {
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
-            out.push(b',');
-            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
+            out.push(b',');
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             write!(out, "0x{:02x}", cursor.read_u8()?)?;
         }
         2 => {
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         3 => {
             write!(
@@ -318,7 +324,7 @@ pub fn tdf_write_csv(
             )?;
         }
         5 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(
                 out,
@@ -327,13 +333,13 @@ pub fn tdf_write_csv(
             )?;
         }
         6 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
@@ -346,11 +352,11 @@ pub fn tdf_write_csv(
         7 => {
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
@@ -358,11 +364,11 @@ pub fn tdf_write_csv(
             out.push(b',');
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             write!(out, "0x{:02x}", cursor.read_u8()?)?;
         }
@@ -370,67 +376,67 @@ pub fn tdf_write_csv(
             write!(out, "{}", cursor.read_i16::<LittleEndian>()? as f64 / 100.0)?;
         }
         10 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         11 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         12 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         13 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         14 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         15 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         16 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         17 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         18 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         19 => {
             write!(
@@ -464,33 +470,33 @@ pub fn tdf_write_csv(
             )?;
         }
         20 => {
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
-            out.push(b',');
-            write!(out, "0x{:02x}", cursor.read_u8()?)?;
-            out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
-            out.push(b',');
-            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
-            out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(out, "0x{:02x}", cursor.read_u8()?)?;
             out.push(b',');
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
+            out.push(b',');
+            write_int(out, cursor.read_i32::<LittleEndian>()?);
+            out.push(b',');
+            write_int(out, cursor.read_u8()?);
+            out.push(b',');
             write!(out, "0x{:02x}", cursor.read_u8()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write!(out, "0x{:02x}", cursor.read_u8()?)?;
+            out.push(b',');
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(
                 out,
@@ -574,13 +580,13 @@ pub fn tdf_write_csv(
             out.push(b',');
             write!(out, "0x{:04x}", cursor.read_u16::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(
                 out,
@@ -593,100 +599,100 @@ pub fn tdf_write_csv(
             write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
         }
         21 => {
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_i8()?)?;
+            write_int(out, cursor.read_i8()?);
         }
         22 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         23 => {
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
         }
         24 => {
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
         }
         25 => {
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             out.extend_from_slice(
                 tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
             );
         }
         26 => {
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
         }
         27 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         28 => {
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         29 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(out, "0x{:012x}", cursor.read_u48::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         30 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(out, "0x{:012x}", cursor.read_u48::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_i8()?)?;
+            write_int(out, cursor.read_i8()?);
         }
         31 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
             write!(out, "0x{:012x}", cursor.read_u48::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i32::<LittleEndian>()?);
         }
         32 => {
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             out.extend_from_slice(
                 tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
@@ -695,7 +701,7 @@ pub fn tdf_write_csv(
         33 => {
             write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             out.extend_from_slice(
                 tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
@@ -704,42 +710,42 @@ pub fn tdf_write_csv(
         34 => {
             let item_count = tdf_variable_item_count(size, 16, 10)?;
             if item_count == 0 {
-                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u16::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u16::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u32::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u16::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u32::<LittleEndian>()?);
                 out.push(b',');
                 write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
                 out.push(b',');
-                write!(out, "{}", cursor.read_i8()?)?;
+                write_int(out, cursor.read_i8()?);
                 out.push(b',');
                 out.push(b',');
                 out.push(b',');
                 out.push(b',');
                 out.push(b',');
             } else {
-                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u16::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u16::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u32::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u16::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u32::<LittleEndian>()?);
                 out.push(b',');
                 write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
                 out.push(b',');
-                write!(out, "{}", cursor.read_i8()?)?;
+                write_int(out, cursor.read_i8()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u32::<LittleEndian>()?);
                 out.push(b',');
-                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                write_int(out, cursor.read_u16::<LittleEndian>()?);
                 out.push(b',');
                 write!(
                     out,
@@ -749,12 +755,12 @@ pub fn tdf_write_csv(
                 out.push(b',');
                 write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
                 out.push(b',');
-                write!(out, "{}", cursor.read_i8()?)?;
+                write_int(out, cursor.read_i8()?);
                 for _ in 1..item_count {
                     out.extend_from_slice(b"\n,,,,,,,,");
-                    write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                    write_int(out, cursor.read_u32::<LittleEndian>()?);
                     out.push(b',');
-                    write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                    write_int(out, cursor.read_u16::<LittleEndian>()?);
                     out.push(b',');
                     write!(
                         out,
@@ -764,16 +770,16 @@ pub fn tdf_write_csv(
                     out.push(b',');
                     write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
                     out.push(b',');
-                    write!(out, "{}", cursor.read_i8()?)?;
+                    write_int(out, cursor.read_i8()?);
                 }
             }
         }
         35 => {
             write!(out, "0x{:012x}", cursor.read_u48::<BigEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i8()?)?;
+            write_int(out, cursor.read_i8()?);
         }
         36 => {
             write!(out, "{}", cursor.read_f32::<LittleEndian>()?)?;
@@ -845,19 +851,19 @@ pub fn tdf_write_csv(
                 cursor.read_u32::<LittleEndian>()? as f64 / 100000.0
             )?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
             out.push(b',');
@@ -869,36 +875,36 @@ pub fn tdf_write_csv(
             out.push(b',');
             write!(out, "0x{:02x}", cursor.read_u8()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         38 => {
-            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i32::<LittleEndian>()?);
         }
         39 => {
             write!(out, "0x{:016x}", cursor.read_u64::<LittleEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_i8()?)?;
+            write_int(out, cursor.read_i8()?);
         }
         40 => {
-            write!(out, "{}", cursor.read_i8()?)?;
+            write_int(out, cursor.read_i8()?);
         }
         41 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         42 => {
-            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i32::<LittleEndian>()?);
         }
         43 => {
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
             out.push(b',');
             out.extend_from_slice(
                 tdf_field_read_string_to_str(cursor, cursor_start, 0, size)?.as_bytes(),
             );
         }
         44 => {
-            write!(out, "{}", cursor.read_i8()?)?;
+            write_int(out, cursor.read_i8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
             out.extend_from_slice(
                 tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
@@ -910,44 +916,44 @@ pub fn tdf_write_csv(
             );
         }
         46 => {
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
         }
         47 => {
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
         }
         48 => {
             write!(out, "0x{:012x}", cursor.read_u48::<BigEndian>()?)?;
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i8()?)?;
+            write_int(out, cursor.read_i8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         49 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         50 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         51 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         52 => {
             let item_count = tdf_variable_item_count(size, 0, 4)?;
@@ -961,35 +967,35 @@ pub fn tdf_write_csv(
             }
         }
         53 => {
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
         }
         54 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         55 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         56 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
         }
         57 => {
-            write!(out, "{}", cursor.read_u8()?)?;
+            write_int(out, cursor.read_u8()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u32::<LittleEndian>()?);
         }
         58 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         59 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         60 => {
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
             out.push(b',');
-            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_i16::<LittleEndian>()?);
         }
         61 => {
-            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            write_int(out, cursor.read_u16::<LittleEndian>()?);
             out.push(b',');
             out.extend_from_slice(
                 tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
