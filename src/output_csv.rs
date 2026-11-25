@@ -28,7 +28,11 @@ pub struct TdfCsvWriter {
     pub outputs:
         HashMap<(Option<u64>, u16), (std::path::PathBuf, std::io::BufWriter<std::fs::File>)>,
     output_cnt: HashMap<OutputKey, usize>,
+    /// Reused buffers for constructing CSV lines
+    time: Vec<u8>,
+    reading: Vec<u8>,
 }
+
 impl TdfCsvWriter {
     pub fn new(
         decoder_idx: usize,
@@ -43,6 +47,8 @@ impl TdfCsvWriter {
             output_unix: output_unix_time,
             outputs: HashMap::new(),
             output_cnt: HashMap::new(),
+            time: Vec::with_capacity(64),
+            reading: Vec::with_capacity(256),
         }
     }
 }
@@ -89,30 +95,39 @@ impl TdfOutput for TdfCsvWriter {
             }
         };
 
-        // Construct CSV line
-        let reading = tdf::decoders_csv::tdf_read_into_str(&tdf_id, size, cursor)?;
-        let time = match tdf_idx {
-            Some(idx) => {
-                // Use the index directly if provided
-                format!("{idx}")
-            }
+        // Decode the reading into the reused row buffer
+        let reading = &mut self.reading;
+        reading.clear();
+        tdf::decoders_csv::tdf_write_csv(&tdf_id, size, cursor, reading)?;
+        reading.push(b'\n');
+
+        // Format the time column
+        let time = &mut self.time;
+        time.clear();
+        match tdf_idx {
+            // Use the index directly if provided
+            Some(idx) => write!(time, "{idx}")?,
             None => match self.output_unix {
                 // Otherwise, format the time to a string
                 true => {
                     let (unix_seconds, unix_nano) = tdf::time::tdf_time_to_unix(tdf_time);
-                    format!("{}.{:06}", unix_seconds, unix_nano / 1000)
+                    write!(time, "{}.{:06}", unix_seconds, unix_nano / 1000)?;
                 }
                 false => {
                     let datetime = tdf::time::tdf_time_to_datetime(tdf_time).expect("Invalid time");
-                    datetime.to_rfc3339_opts(SecondsFormat::Micros, true)
+                    time.extend_from_slice(
+                        datetime
+                            .to_rfc3339_opts(SecondsFormat::Micros, true)
+                            .as_bytes(),
+                    );
                 }
             },
         };
-
-        let line: String = format!("{},{}\n", time, reading);
+        time.push(b',');
 
         // Write line to output
-        writer.write_all(line.as_bytes())?;
+        writer.write_all(time)?;
+        writer.write_all(reading)?;
 
         // Increment output counter
         increment_output_count(&mut self.output_cnt, (remote_id, tdf_id));
