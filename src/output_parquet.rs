@@ -3,7 +3,9 @@ use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::io::{self, Cursor, Read};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
@@ -365,7 +367,33 @@ impl TdfParquetMergedOutput {
     }
 }
 
-pub fn merge_with_threshold<T: ProgressReporter>(
+/// Merge the per-worker files of a single output, in worker order
+fn merge_output<T: ProgressReporter>(
+    mut output: TdfParquetMergedOutput,
+    worker_outputs: &HashMap<usize, TdfDecoderOutputs>,
+    reporter: &mut T,
+) -> io::Result<Vec<PathBuf>> {
+    for worker in worker_outputs.keys().sorted() {
+        let input_path = worker_outputs[worker].output.clone();
+        let file = File::open(&input_path)?;
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+            .map_err(to_io_error)?
+            .with_batch_size(DEFAULT_BATCH_ROWS)
+            .build()
+            .map_err(to_io_error)?;
+
+        for batch in reader {
+            output.append_batch(&batch.map_err(to_io_error)?)?;
+        }
+
+        std::fs::remove_file(input_path)?;
+        reporter.increment(1);
+    }
+
+    output.finish()
+}
+
+pub fn merge_with_threshold<T: ProgressReporter + Clone + Send>(
     args: &mut RunArgs<T>,
     output_files: &mut Vec<PathBuf>,
     stats_tdf: &Arc<Mutex<HashMap<(Option<u64>, u16), HashMap<usize, TdfDecoderOutputs>>>>,
@@ -373,37 +401,59 @@ pub fn merge_with_threshold<T: ProgressReporter>(
 ) -> io::Result<()> {
     let results = stats_tdf.lock().unwrap();
     let num_files: usize = results.values().map(|inner| inner.len()).sum();
+    let jobs: Vec<_> = results.iter().collect();
+
+    // Merge the largest outputs first so they don't end up running alone at the end
+    let mut order: Vec<usize> = (0..jobs.len()).collect();
+    order.sort_by_key(|&idx| {
+        std::cmp::Reverse(jobs[idx].1.values().map(|o| o.num_output).sum::<usize>())
+    });
 
     args.merge_reporter.start("Merging output files", num_files);
 
-    for ((remote_id, tdf_id), worker_outputs) in results.iter() {
-        let mut output = TdfParquetMergedOutput::new(
-            args.output_folder.clone(),
-            args.output_prefix.clone(),
-            *remote_id,
-            *tdf_id,
-            threshold_rows,
-        );
+    // Each output is independent, merge them in parallel
+    let next_job = AtomicUsize::new(0);
+    let num_threads = jobs.len().min(num_cpus::get()).max(1);
+    let merged: Vec<io::Result<Vec<(usize, Vec<PathBuf>)>>> = thread::scope(|s| {
+        let handles: Vec<_> = (0..num_threads)
+            .map(|_| {
+                let mut reporter = args.merge_reporter.clone();
+                let (jobs, order, next_job) = (&jobs, &order, &next_job);
+                let (output_folder, output_prefix) = (&args.output_folder, &args.output_prefix);
+                s.spawn(move || {
+                    let mut done = Vec::new();
+                    loop {
+                        let job_idx = match order.get(next_job.fetch_add(1, Ordering::Relaxed)) {
+                            Some(&idx) => idx,
+                            None => break,
+                        };
+                        let ((remote_id, tdf_id), worker_outputs) = jobs[job_idx];
+                        let output = TdfParquetMergedOutput::new(
+                            output_folder.clone(),
+                            output_prefix.clone(),
+                            *remote_id,
+                            *tdf_id,
+                            threshold_rows,
+                        );
+                        let files = merge_output(output, worker_outputs, &mut reporter)?;
+                        done.push((job_idx, files));
+                    }
+                    Ok(done)
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
 
-        for worker in worker_outputs.keys().sorted() {
-            let input_path = worker_outputs[worker].output.clone();
-            let file = File::open(&input_path)?;
-            let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-                .map_err(to_io_error)?
-                .with_batch_size(DEFAULT_BATCH_ROWS)
-                .build()
-                .map_err(to_io_error)?;
-
-            for batch in reader {
-                output.append_batch(&batch.map_err(to_io_error)?)?;
-            }
-
-            std::fs::remove_file(input_path)?;
-            args.merge_reporter.increment(1);
-        }
-
-        output_files.extend(output.finish()?);
-    }
+    // Report output files in a deterministic order, independent of thread scheduling
+    let mut merged: Vec<(usize, Vec<PathBuf>)> = merged
+        .into_iter()
+        .collect::<io::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    merged.sort_by_key(|(job_idx, _)| *job_idx);
+    output_files.extend(merged.into_iter().flat_map(|(_, files)| files));
 
     args.merge_reporter.stop();
 
