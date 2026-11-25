@@ -31,6 +31,7 @@ blocks = { path = "blocks" }
 egui_extras = "0.34.1"
 directories = "6.0.0"
 image = "0.25.9"
+itoa = "1.0.18"
 memchr = "2.8.0"
 
 [target.'cfg(windows)'.dependencies]

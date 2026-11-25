@@ -33,6 +33,11 @@ pub struct TdfCsvWriter {
     reading: Vec<u8>,
 }
 
+fn push_int<I: itoa::Integer>(out: &mut Vec<u8>, val: I) {
+    let mut buf = itoa::Buffer::new();
+    out.extend_from_slice(buf.format(val).as_bytes());
+}
+
 impl TdfCsvWriter {
     pub fn new(
         decoder_idx: usize,
@@ -106,12 +111,17 @@ impl TdfOutput for TdfCsvWriter {
         time.clear();
         match tdf_idx {
             // Use the index directly if provided
-            Some(idx) => write!(time, "{idx}")?,
+            Some(idx) => push_int(time, idx),
             None => match self.output_unix {
                 // Otherwise, format the time to a string
                 true => {
                     let (unix_seconds, unix_nano) = tdf::time::tdf_time_to_unix(tdf_time);
-                    write!(time, "{}.{:06}", unix_seconds, unix_nano / 1000)?;
+                    push_int(time, unix_seconds);
+                    time.push(b'.');
+                    let mut buf = itoa::Buffer::new();
+                    let micros = buf.format(unix_nano / 1000).as_bytes();
+                    time.extend_from_slice(&b"000000"[micros.len().min(6)..]);
+                    time.extend_from_slice(micros);
                 }
                 false => {
                     let datetime = tdf::time::tdf_time_to_datetime(tdf_time).expect("Invalid time");

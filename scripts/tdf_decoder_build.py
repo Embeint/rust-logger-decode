@@ -424,6 +424,10 @@ def decoders_gen(tdf_defs, output):
             # Helper functions return a fully formatted String
             assert spec == "{}"
             return f"out.extend_from_slice({expr}.as_bytes());"
+        is_float = " as f64" in expr or re.search(r"read_f(32|64)", expr)
+        if spec == "{}" and not is_float:
+            # Plain integers bypass core::fmt
+            return f"write_int(out, {expr});"
         return f'write!(out, "{spec}", {expr})?;'
 
     def csv_write_row(fields):

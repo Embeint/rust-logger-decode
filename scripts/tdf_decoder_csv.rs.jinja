@@ -58,6 +58,13 @@ fn tdf_variable_item_count(size: u8, base_size: usize, item_size: usize) -> Resu
     Ok(bytes_remaining / item_size)
 }
 
+#[inline(always)]
+fn write_int<I: itoa::Integer>(out: &mut Vec<u8>, val: I)
+{
+    let mut buf = itoa::Buffer::new();
+    out.extend_from_slice(buf.format(val).as_bytes());
+}
+
 /// Decode a TDF and append its CSV representation to `out`.
 ///
 /// On error, `out` may contain a partially written row.
