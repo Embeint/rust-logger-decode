@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::io::{self, Cursor, Read};
 use std::path::PathBuf;
@@ -16,8 +15,7 @@ use tdf::TdfOutput;
 use tdf::decoders_parquet::{TdfParquetBatchBuilder, TdfParquetRowMeta};
 
 use crate::output_common::{
-    OutputKey, increment_output_count, merged_output_path, rename_first_file_if_splitting,
-    touch_output_count, worker_output_path, written,
+    OutputKey, merged_output_path, rename_first_file_if_splitting, worker_output_path,
 };
 use crate::{ProgressReporter, RunArgs, TdfDecoderOutputs};
 
@@ -92,8 +90,20 @@ pub struct TdfParquetWriter {
     output_folder: PathBuf,
     output_prefix: String,
     batch_rows: usize,
-    outputs: HashMap<(Option<u64>, u16), TdfParquetOutputFile>,
-    output_cnt: HashMap<OutputKey, usize>,
+    /// Output files, in the order they were created
+    outputs: Vec<ParquetWorkerOutput>,
+    /// Index into `outputs` for each key
+    output_idx: HashMap<OutputKey, usize>,
+    /// Most recently written output, consecutive samples usually share it
+    last_output: Option<(OutputKey, usize)>,
+}
+
+/// A single worker output file
+struct ParquetWorkerOutput {
+    key: OutputKey,
+    file: TdfParquetOutputFile,
+    /// Number of readings written
+    count: usize,
 }
 
 impl TdfParquetWriter {
@@ -117,14 +127,15 @@ impl TdfParquetWriter {
             output_folder,
             output_prefix,
             batch_rows: batch_rows.max(1),
-            outputs: HashMap::new(),
-            output_cnt: HashMap::new(),
+            outputs: Vec::new(),
+            output_idx: HashMap::new(),
+            last_output: None,
         }
     }
 
     pub fn finish(&mut self) -> io::Result<()> {
-        for output in self.outputs.values_mut() {
-            output.finish(self.batch_rows)?;
+        for output in self.outputs.iter_mut() {
+            output.file.finish(self.batch_rows)?;
         }
         Ok(())
     }
@@ -150,6 +161,44 @@ impl TdfParquetWriter {
     }
 }
 
+impl TdfParquetWriter {
+    /// Index of the output for `key`, creating the output if it doesn't exist
+    fn output_index(&mut self, key: OutputKey) -> io::Result<usize> {
+        // Fast path, avoids hashing for consecutive samples of the same TDF
+        if let Some((last_key, idx)) = self.last_output {
+            if last_key == key {
+                return Ok(idx);
+            }
+        }
+
+        let idx = match self.output_idx.get(&key) {
+            Some(&idx) => idx,
+            None => {
+                let (remote_id, tdf_id) = key;
+                let file = Self::create_output(
+                    self.decoder_idx,
+                    &self.output_folder,
+                    &self.output_prefix,
+                    self.batch_rows,
+                    remote_id,
+                    tdf_id,
+                )?;
+
+                // Output is tracked (with a zero count) even if decoding fails
+                self.outputs.push(ParquetWorkerOutput {
+                    key,
+                    file,
+                    count: 0,
+                });
+                self.output_idx.insert(key, self.outputs.len() - 1);
+                self.outputs.len() - 1
+            }
+        };
+        self.last_output = Some((key, idx));
+        Ok(idx)
+    }
+}
+
 impl Drop for TdfParquetWriter {
     fn drop(&mut self) {
         let _ = self.finish();
@@ -158,9 +207,9 @@ impl Drop for TdfParquetWriter {
 
 impl TdfOutput for TdfParquetWriter {
     fn output_path(&self, remote_id: Option<u64>, tdf_id: u16) -> Option<PathBuf> {
-        self.outputs
+        self.output_idx
             .get(&(remote_id, tdf_id))
-            .map(|output| output.path.clone())
+            .map(|&idx| self.outputs[idx].file.path.clone())
     }
 
     fn write(
@@ -178,22 +227,7 @@ impl TdfOutput for TdfParquetWriter {
             return Ok(());
         }
 
-        let output = match self.outputs.entry((remote_id, tdf_id)) {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                let output = Self::create_output(
-                    self.decoder_idx,
-                    &self.output_folder,
-                    &self.output_prefix,
-                    self.batch_rows,
-                    remote_id,
-                    tdf_id,
-                )?;
-
-                touch_output_count(&mut self.output_cnt, (remote_id, tdf_id));
-                entry.insert(output)
-            }
-        };
+        let output_idx = self.output_index((remote_id, tdf_id))?;
 
         let meta = match tdf_idx {
             Some(idx) => TdfParquetRowMeta {
@@ -206,23 +240,28 @@ impl TdfOutput for TdfParquetWriter {
             },
         };
 
-        output.append(meta, size, cursor)?;
+        let output = &mut self.outputs[output_idx];
+        output.file.append(meta, size, cursor)?;
 
-        if output.builder.rows() >= self.batch_rows {
-            output.flush_batch(self.batch_rows)?;
+        if output.file.builder.rows() >= self.batch_rows {
+            output.file.flush_batch(self.batch_rows)?;
         }
 
-        increment_output_count(&mut self.output_cnt, (remote_id, tdf_id));
+        output.count += 1;
 
         Ok(())
     }
 
     fn iter_written(&self) -> impl Iterator<Item = (&(Option<u64>, u16), &usize)> {
-        self.output_cnt.iter()
+        self.outputs
+            .iter()
+            .map(|output| (&output.key, &output.count))
     }
 
     fn written(&self, remote_id: Option<u64>, tdf_id: u16) -> usize {
-        written(&self.output_cnt, (remote_id, tdf_id))
+        self.output_idx
+            .get(&(remote_id, tdf_id))
+            .map_or(0, |&idx| self.outputs[idx].count)
     }
 }
 
