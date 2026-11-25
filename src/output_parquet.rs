@@ -11,6 +11,8 @@ use arrow_schema::SchemaRef;
 use itertools::Itertools;
 use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::file::properties::WriterProperties;
+use parquet::schema::types::ColumnPath;
 use tdf::TdfOutput;
 use tdf::decoders_parquet::{TdfParquetBatchBuilder, TdfParquetRowMeta};
 
@@ -20,6 +22,15 @@ use crate::output_common::{
 use crate::{ProgressReporter, RunArgs, TdfDecoderOutputs};
 
 const DEFAULT_BATCH_ROWS: usize = 65536;
+
+/// Properties for all Parquet files written
+fn writer_properties() -> WriterProperties {
+    WriterProperties::builder()
+        // Timestamps are unique per row, so dictionary encoding only adds
+        // overhead before falling back to plain encoding.
+        .set_column_dictionary_enabled(ColumnPath::from("timestamp"), false)
+        .build()
+}
 
 struct TdfParquetOutputFile {
     path: PathBuf,
@@ -34,7 +45,8 @@ impl TdfParquetOutputFile {
         let builder = tdf::decoders_parquet::tdf_parquet_builder(tdf_id, batch_rows)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Unknown TDF ID"))?;
         let file = File::create(path.clone())?;
-        let writer = ArrowWriter::try_new(file, builder.schema(), None).map_err(to_io_error)?;
+        let writer = ArrowWriter::try_new(file, builder.schema(), Some(writer_properties()))
+            .map_err(to_io_error)?;
 
         Ok(Self {
             path,
@@ -346,7 +358,8 @@ impl TdfParquetMergedOutput {
 
         let path = self.output_path();
         let file = File::create(path.clone())?;
-        let writer = ArrowWriter::try_new(file, schema, None).map_err(to_io_error)?;
+        let writer =
+            ArrowWriter::try_new(file, schema, Some(writer_properties())).map_err(to_io_error)?;
 
         self.output_files.push(path);
         self.writer = Some(writer);
