@@ -31,11 +31,61 @@ pub struct TdfCsvWriter {
     /// Reused buffers for constructing CSV lines
     time: Vec<u8>,
     reading: Vec<u8>,
+    rfc3339: Rfc3339Formatter,
 }
 
 fn push_int<I: itoa::Integer>(out: &mut Vec<u8>, val: I) {
     let mut buf = itoa::Buffer::new();
     out.extend_from_slice(buf.format(val).as_bytes());
+}
+
+/// Append the microseconds of `unix_nano` as exactly 6 zero-padded digits
+fn push_micros(out: &mut Vec<u8>, unix_nano: u32) {
+    let mut buf = itoa::Buffer::new();
+    let micros = buf.format(unix_nano / 1000).as_bytes();
+    out.extend_from_slice(&b"000000"[micros.len().min(6)..]);
+    out.extend_from_slice(micros);
+}
+
+/// RFC 3339 timestamp formatter that caches the date and time up to the
+/// whole second, which is shared by consecutive samples.
+///
+/// Output is identical to `to_rfc3339_opts(SecondsFormat::Micros, true)`.
+#[derive(Default)]
+struct Rfc3339Formatter {
+    /// Unix seconds that `prefix` was generated for
+    seconds: Option<i64>,
+    /// Formatted timestamp up to and including the whole seconds
+    prefix: Vec<u8>,
+}
+
+impl Rfc3339Formatter {
+    /// Trailing part of a chrono timestamp with zero sub-second component
+    const ZERO_SUFFIX: &'static [u8] = b".000000Z";
+
+    fn push(&mut self, out: &mut Vec<u8>, tdf_time: i64) {
+        let (unix_seconds, unix_nano) = tdf::time::tdf_time_to_unix(tdf_time);
+
+        if self.seconds != Some(unix_seconds) {
+            // Let chrono format the whole second, then strip the fraction
+            let datetime =
+                tdf::time::tdf_time_to_datetime(tdf_time & !0xFFFF).expect("Invalid time");
+            let formatted = datetime.to_rfc3339_opts(SecondsFormat::Micros, true);
+            let prefix = formatted
+                .as_bytes()
+                .strip_suffix(Self::ZERO_SUFFIX)
+                .expect("Unexpected RFC 3339 format");
+
+            self.prefix.clear();
+            self.prefix.extend_from_slice(prefix);
+            self.seconds = Some(unix_seconds);
+        }
+
+        out.extend_from_slice(&self.prefix);
+        out.push(b'.');
+        push_micros(out, unix_nano);
+        out.push(b'Z');
+    }
 }
 
 impl TdfCsvWriter {
@@ -54,6 +104,7 @@ impl TdfCsvWriter {
             output_cnt: HashMap::new(),
             time: Vec::with_capacity(64),
             reading: Vec::with_capacity(256),
+            rfc3339: Rfc3339Formatter::default(),
         }
     }
 }
@@ -118,19 +169,9 @@ impl TdfOutput for TdfCsvWriter {
                     let (unix_seconds, unix_nano) = tdf::time::tdf_time_to_unix(tdf_time);
                     push_int(time, unix_seconds);
                     time.push(b'.');
-                    let mut buf = itoa::Buffer::new();
-                    let micros = buf.format(unix_nano / 1000).as_bytes();
-                    time.extend_from_slice(&b"000000"[micros.len().min(6)..]);
-                    time.extend_from_slice(micros);
+                    push_micros(time, unix_nano);
                 }
-                false => {
-                    let datetime = tdf::time::tdf_time_to_datetime(tdf_time).expect("Invalid time");
-                    time.extend_from_slice(
-                        datetime
-                            .to_rfc3339_opts(SecondsFormat::Micros, true)
-                            .as_bytes(),
-                    );
-                }
+                false => self.rfc3339.push(time, tdf_time),
             },
         };
         time.push(b',');
@@ -490,6 +531,43 @@ mod tests {
         assert_eq!(contents, "time,value\n1,10\n2,20\n3,30\n");
 
         fs::remove_dir_all(output_dir).unwrap();
+    }
+
+    #[test]
+    fn rfc3339_formatter_matches_chrono() {
+        let reference = |tdf_time: i64| {
+            tdf::time::tdf_time_to_datetime(tdf_time)
+                .unwrap()
+                .to_rfc3339_opts(SecondsFormat::Micros, true)
+        };
+
+        let mut times = Vec::new();
+        // Samples at 100 Hz crossing second boundaries, then jumping backwards
+        let base: i64 = 1_400_000_000 << 16;
+        times.extend((0..500).map(|i| base + i * 655));
+        times.extend((0..10).map(|i| base - i * 30_000));
+        // Every sub-second edge value within a single second
+        times.extend([0, 1, 0x0041, 0x0042, 0x7FFF, 0x8000, 0xFFFE, 0xFFFF].map(|f| base + f));
+        // Pseudo-random times over +-17000 years, covering negative and 5 digit years
+        let mut state: u64 = 0x9E3779B97F4A7C15;
+        for _ in 0..100_000 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            times.push((state as i64) >> 8);
+        }
+
+        let mut formatter = Rfc3339Formatter::default();
+        let mut out = Vec::new();
+        for tdf_time in times {
+            out.clear();
+            formatter.push(&mut out, tdf_time);
+            assert_eq!(
+                std::str::from_utf8(&out).unwrap(),
+                reference(tdf_time),
+                "tdf_time {tdf_time:#x}"
+            );
+        }
     }
 
     fn read_files(files: &[PathBuf]) -> Vec<String> {
