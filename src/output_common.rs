@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -80,16 +79,4 @@ pub(crate) fn rename_first_file_if_splitting(
     }
 
     Ok(())
-}
-
-pub(crate) fn touch_output_count(output_cnt: &mut HashMap<OutputKey, usize>, key: OutputKey) {
-    output_cnt.entry(key).or_default();
-}
-
-pub(crate) fn increment_output_count(output_cnt: &mut HashMap<OutputKey, usize>, key: OutputKey) {
-    *output_cnt.entry(key).or_default() += 1;
-}
-
-pub(crate) fn written(output_cnt: &HashMap<OutputKey, usize>, key: OutputKey) -> usize {
-    output_cnt.get(&key).copied().unwrap_or_default()
 }
