@@ -6,7 +6,9 @@ use std::fs::{self, File};
 use std::io::Cursor;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use tdf::TdfOutput;
 
 use crate::output_common::{
@@ -14,6 +16,9 @@ use crate::output_common::{
     touch_output_count, worker_output_path, written,
 };
 use crate::{ProgressReporter, RunArgs, TdfDecoderOutputs};
+
+/// Read buffer size used when merging worker output files
+const MERGE_BUFFER_SIZE: usize = 1 << 20;
 
 pub struct TdfCsvWriter {
     decoder_idx: usize,
@@ -134,6 +139,8 @@ struct TdfCsvMergedOutput {
     header: Option<String>,
     readings_in_file: usize,
     part_idx: usize,
+    /// Last byte written was not a newline
+    line_open: bool,
 }
 
 impl TdfCsvMergedOutput {
@@ -158,6 +165,7 @@ impl TdfCsvMergedOutput {
             header: None,
             readings_in_file: 0,
             part_idx: 0,
+            line_open: false,
         }
     }
 
@@ -169,27 +177,53 @@ impl TdfCsvMergedOutput {
         Ok(())
     }
 
-    fn append_line(&mut self, line: &str) -> io::Result<()> {
-        if self.writer.is_none() {
-            self.start_next_file()?;
-        }
+    /// Append raw CSV data (complete or partial lines) to the output, starting
+    /// a new file whenever the per-file reading limit is reached.
+    fn append_data(&mut self, mut data: &[u8]) -> io::Result<()> {
+        while !data.is_empty() {
+            if self.writer.is_none()
+                || self
+                    .max_readings_per_file
+                    .is_some_and(|max_readings| self.readings_in_file >= max_readings)
+            {
+                self.start_next_file()?;
+            }
 
-        if self
-            .max_readings_per_file
-            .is_some_and(|max_readings| self.readings_in_file >= max_readings)
-        {
-            self.start_next_file()?;
-        }
+            // Determine how much of the data can go into the current file.
+            // Readings are only counted when files are being split.
+            let len = match self.max_readings_per_file {
+                None => data.len(),
+                Some(max_readings) => {
+                    let remaining = max_readings - self.readings_in_file;
+                    let mut end = data.len();
+                    let mut lines = 0;
+                    for pos in memchr::memchr_iter(b'\n', data) {
+                        lines += 1;
+                        if lines == remaining {
+                            end = pos + 1;
+                            break;
+                        }
+                    }
+                    self.readings_in_file += lines;
+                    end
+                }
+            };
 
-        self.writer
-            .as_mut()
-            .expect("CSV writer should be open")
-            .write_all(line.as_bytes())?;
-        self.writer
-            .as_mut()
-            .expect("CSV writer should be open")
-            .write_all(b"\n")?;
-        self.readings_in_file += 1;
+            self.writer
+                .as_mut()
+                .expect("CSV writer should be open")
+                .write_all(&data[..len])?;
+            self.line_open = data[len - 1] != b'\n';
+            data = &data[len..];
+        }
+        Ok(())
+    }
+
+    /// Terminate a trailing partial line at the end of an input file
+    fn end_input(&mut self) -> io::Result<()> {
+        if self.line_open {
+            self.append_data(b"\n")?;
+        }
         Ok(())
     }
 
@@ -280,44 +314,115 @@ impl TdfCsvMergedOutput {
     }
 }
 
-pub fn merge<T: ProgressReporter>(
+/// Merge the per-worker files of a single output, in worker order
+fn merge_output<T: ProgressReporter>(
+    mut output: TdfCsvMergedOutput,
+    worker_outputs: &HashMap<usize, TdfDecoderOutputs>,
+    reporter: &mut T,
+) -> io::Result<Vec<PathBuf>> {
+    for worker in worker_outputs.keys().sorted() {
+        let input_path = worker_outputs[worker].output.clone();
+        let mut input = BufReader::with_capacity(MERGE_BUFFER_SIZE, File::open(&input_path)?);
+
+        // First line is the CSV header
+        let mut header = Vec::new();
+        if input.read_until(b'\n', &mut header)? > 0 {
+            if header.last() == Some(&b'\n') {
+                header.pop();
+                if header.last() == Some(&b'\r') {
+                    header.pop();
+                }
+            }
+            let header = String::from_utf8(header)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            output.set_header(header)?;
+        }
+
+        // Remaining data is copied without parsing individual lines
+        loop {
+            let chunk = input.fill_buf()?;
+            if chunk.is_empty() {
+                break;
+            }
+            let len = chunk.len();
+            output.append_data(chunk)?;
+            input.consume(len);
+        }
+        output.end_input()?;
+        drop(input);
+
+        fs::remove_file(input_path)?;
+
+        reporter.increment(1);
+    }
+    output.finish()
+}
+
+pub fn merge<T: ProgressReporter + Clone + Send>(
     args: &mut RunArgs<T>,
     output_files: &mut Vec<PathBuf>,
     stats_tdf: &Arc<Mutex<HashMap<(Option<u64>, u16), HashMap<usize, TdfDecoderOutputs>>>>,
 ) -> io::Result<()> {
     let results = stats_tdf.lock().unwrap();
     let num_files: usize = results.values().map(|inner| inner.len()).sum();
+    let jobs: Vec<_> = results.iter().collect();
+
+    // Merge the largest outputs first so they don't end up running alone at the end
+    let mut order: Vec<usize> = (0..jobs.len()).collect();
+    order.sort_by_key(|&idx| {
+        std::cmp::Reverse(jobs[idx].1.values().map(|o| o.num_output).sum::<usize>())
+    });
 
     args.merge_reporter.start("Merging output files", num_files);
 
-    for ((remote_id, tdf_id), worker_outputs) in results.iter() {
-        let mut output = TdfCsvMergedOutput::new(
-            args.output_folder.clone(),
-            args.output_prefix.clone(),
-            *remote_id,
-            *tdf_id,
-            args.max_readings_per_output_file,
-        );
+    // Each output is independent, merge them in parallel
+    let next_job = AtomicUsize::new(0);
+    let num_threads = jobs.len().min(num_cpus::get()).max(1);
+    let merged: Vec<io::Result<Vec<(usize, Vec<PathBuf>)>>> = thread::scope(|s| {
+        let handles: Vec<_> = (0..num_threads)
+            .map(|_| {
+                let mut reporter = args.merge_reporter.clone();
+                let (jobs, order, next_job) = (&jobs, &order, &next_job);
+                let (output_folder, output_prefix, max_readings) = (
+                    &args.output_folder,
+                    &args.output_prefix,
+                    args.max_readings_per_output_file,
+                );
+                s.spawn(move || {
+                    let mut done = Vec::new();
+                    loop {
+                        let job_idx = match order.get(next_job.fetch_add(1, Ordering::Relaxed)) {
+                            Some(&idx) => idx,
+                            None => break,
+                        };
+                        let ((remote_id, tdf_id), worker_outputs) = jobs[job_idx];
+                        let output = TdfCsvMergedOutput::new(
+                            output_folder.clone(),
+                            output_prefix.clone(),
+                            *remote_id,
+                            *tdf_id,
+                            max_readings,
+                        );
+                        let files = merge_output(output, worker_outputs, &mut reporter)?;
+                        done.push((job_idx, files));
+                    }
+                    Ok(done)
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
 
-        for worker in worker_outputs.keys().sorted() {
-            let input_path = worker_outputs[worker].output.clone();
-            let input = BufReader::new(File::open(&input_path)?);
+    // Report output files in a deterministic order, independent of thread scheduling
+    let mut merged: Vec<(usize, Vec<PathBuf>)> = merged
+        .into_iter()
+        .collect::<io::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    merged.sort_by_key(|(job_idx, _)| *job_idx);
+    output_files.extend(merged.into_iter().flat_map(|(_, files)| files));
 
-            for (idx, line) in input.lines().enumerate() {
-                let line = line?;
-                if idx == 0 {
-                    output.set_header(line)?;
-                    continue;
-                }
-                output.append_line(&line)?;
-            }
-
-            fs::remove_file(input_path)?;
-
-            args.merge_reporter.increment(1);
-        }
-        output_files.extend(output.finish()?);
-    }
     args.merge_reporter.stop();
 
     Ok(())
@@ -342,9 +447,8 @@ mod tests {
         let mut output = TdfCsvMergedOutput::new(output_dir.clone(), "out".to_string(), None, 1, 0);
 
         output.set_header("time,value".to_string()).unwrap();
-        output.append_line("1,10").unwrap();
-        output.append_line("2,20").unwrap();
-        output.append_line("3,30").unwrap();
+        output.append_data(b"1,10\n2,20\n3,30\n").unwrap();
+        output.end_input().unwrap();
 
         let files = output.finish().unwrap();
         assert_eq!(files.len(), 1);
@@ -359,6 +463,70 @@ mod tests {
             .read_to_string(&mut contents)
             .unwrap();
         assert_eq!(contents, "time,value\n1,10\n2,20\n3,30\n");
+
+        fs::remove_dir_all(output_dir).unwrap();
+    }
+
+    fn read_files(files: &[PathBuf]) -> Vec<String> {
+        files
+            .iter()
+            .map(|f| {
+                let mut contents = String::new();
+                File::open(f)
+                    .unwrap()
+                    .read_to_string(&mut contents)
+                    .unwrap();
+                contents
+            })
+            .collect()
+    }
+
+    #[test]
+    fn max_readings_splits_on_line_boundaries_across_chunks() {
+        let output_dir = unique_temp_dir("split_chunks_csv");
+        let mut output = TdfCsvMergedOutput::new(output_dir.clone(), "out".to_string(), None, 1, 2);
+
+        output.set_header("time,value".to_string()).unwrap();
+        // Chunk boundaries fall in the middle of lines
+        output.append_data(b"1,10\n2,").unwrap();
+        output.append_data(b"20\n3,30\n4").unwrap();
+        output.append_data(b",40\n5,50").unwrap();
+        output.end_input().unwrap();
+        // Second input file
+        output.append_data(b"6,60\n").unwrap();
+        output.end_input().unwrap();
+
+        let files = output.finish().unwrap();
+        assert_eq!(
+            read_files(&files),
+            vec![
+                "time,value\n1,10\n2,20\n",
+                "time,value\n3,30\n4,40\n",
+                "time,value\n5,50\n6,60\n",
+            ]
+        );
+        assert_eq!(
+            files[0],
+            output_dir.join(format!("out_{}_00000.csv", tdf::decoders::tdf_name(&1)))
+        );
+
+        fs::remove_dir_all(output_dir).unwrap();
+    }
+
+    #[test]
+    fn max_readings_does_not_create_empty_trailing_file() {
+        let output_dir = unique_temp_dir("split_exact_csv");
+        let mut output = TdfCsvMergedOutput::new(output_dir.clone(), "out".to_string(), None, 1, 2);
+
+        output.set_header("time,value".to_string()).unwrap();
+        output.append_data(b"1,10\n2,20\n3,30\n4,40\n").unwrap();
+        output.end_input().unwrap();
+
+        let files = output.finish().unwrap();
+        assert_eq!(
+            read_files(&files),
+            vec!["time,value\n1,10\n2,20\n", "time,value\n3,30\n4,40\n"]
+        );
 
         fs::remove_dir_all(output_dir).unwrap();
     }
