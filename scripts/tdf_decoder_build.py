@@ -418,6 +418,24 @@ def decoders_gen(tdf_defs, output):
             return base * field["num"]
         return base
 
+    def csv_write_stmt(conv, spec):
+        expr = conv[1]
+        if expr.startswith("tdf_field_read_"):
+            # Helper functions return a fully formatted String
+            assert spec == "{}"
+            return f"out.extend_from_slice({expr}.as_bytes());"
+        return f'write!(out, "{spec}", {expr})?;'
+
+    def csv_write_row(fields):
+        """Statements writing comma separated fields, `None` is an empty field"""
+        stmts = []
+        for idx, field in enumerate(fields):
+            if idx > 0:
+                stmts.append("out.push(b',');")
+            if field is not None:
+                stmts.append(csv_write_stmt(*field))
+        return stmts
+
     # Generate rust conversion functions
     for _tdf_id, info in tdf_defs["definitions"].items():
         info["rust_convs"] = []
@@ -461,6 +479,19 @@ def decoders_gen(tdf_defs, output):
 
         info["rust_head"] = ",".join([f'"{c[0]}"' for c in info["rust_convs"]])
         info["rust_fmt"] = ",".join(fmt)
+
+        # Statements that append the CSV row directly into an output buffer
+        assert len(fmt) == len(info["rust_convs"])
+        info["csv_write"] = csv_write_row(zip(info["rust_convs"], fmt))
+        if variable_field is not None:
+            var = info["csv_variable"]
+            num_base = len(var["base_convs"])
+            assert len(variable_fmt) == len(variable_convs)
+            var["write_empty"] = csv_write_row(
+                list(zip(var["base_convs"], fmt[:num_base]))
+                + [None] * len(variable_convs)
+            )
+            var["write_item"] = csv_write_row(zip(variable_convs, variable_fmt))
 
     rust_array_type = {
         "i8": "Int8Array",

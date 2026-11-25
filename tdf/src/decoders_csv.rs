@@ -1,4 +1,4 @@
-use std::io::{Cursor, Error, ErrorKind, Read, Result};
+use std::io::{Cursor, Error, ErrorKind, Read, Result, Write};
 
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 
@@ -255,539 +255,757 @@ fn tdf_variable_item_count(size: u8, base_size: usize, item_size: usize) -> Resu
     Ok(bytes_remaining / item_size)
 }
 
-pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> Result<String> {
+/// Decode a TDF and append its CSV representation to `out`.
+///
+/// On error, `out` may contain a partially written row.
+pub fn tdf_write_csv(
+    tdf_id: &u16,
+    size: u8,
+    cursor: &mut Cursor<&[u8]>,
+    out: &mut Vec<u8>,
+) -> Result<()> {
     let cursor_start = cursor.position();
 
-    let res = match tdf_id {
-        1 =>
-            Ok(format!(
-                "0x{:08x},{},{},{},0x{:08x},0x{:08x},{},{},{},0x{:02x}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u8()?,
-            )),
-        2 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_i32::<LittleEndian>()?,
-                cursor.read_u8()?,
-            )),
-        3 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
-            )),
-        4 =>
-            Ok(format!(
+    match tdf_id {
+        1 => {
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:02x}", cursor.read_u8()?)?;
+        }
+        2 => {
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        3 => {
+            write!(
+                out,
                 "{}",
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-            )),
-        5 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u8()?,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000000.0,
-            )),
-        6 =>
-            Ok(format!(
-                "{},0x{:08x},{},{},0x{:08x},0x{:08x},{}",
-                cursor.read_u8()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                tdf_field_read_string_to_str(cursor, cursor_start, 8, size)?,
-            )),
-        7 =>
-            Ok(format!(
-                "0x{:08x},{},{},{},0x{:08x},0x{:04x},0x{:08x},{},{},{},0x{:02x}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u8()?,
-            )),
-        8 =>
-            Ok(format!(
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                cursor.read_i16::<LittleEndian>()? as f64 / 100.0,
-            )),
-        10 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        11 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        12 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        13 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        14 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        15 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        16 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        17 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        18 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        19 =>
-            Ok(format!(
-                "{},{},{},{},{}",
-                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-            )),
-        20 =>
-            Ok(format!(
-                "{},{},{},{},{},{},{},0x{:02x},{},{},{},0x{:02x},0x{:02x},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},0x{:04x},{},{},{},{},{},{},{}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_i32::<LittleEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 100000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 100000.0,
-                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_i32::<LittleEndian>()? as f64 / 100000.0,
-                cursor.read_i16::<LittleEndian>()? as f64 / 100.0,
-                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
-            )),
-        21 =>
-            Ok(format!(
-                "{},{},{},{},{},{},{},{},{}",
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()? as f64 / -1.0,
-                cursor.read_i8()?,
-            )),
-        22 =>
-            Ok(format!(
-                "{},{},{},{},{},{},{},{},{}",
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-            )),
-        23 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-            )),
-        24 =>
-            Ok(format!(
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
+        }
+        4 => {
+            write!(
+                out,
                 "{}",
-                cursor.read_u32::<LittleEndian>()?,
-            )),
-        25 =>
-            Ok(format!(
-                "0x{:08x},{},{}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
-            )),
-        26 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-            )),
-        27 =>
-            Ok(format!(
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+        }
+        5 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                cursor.read_u8()?,
-            )),
-        28 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u8()?,
-            )),
-        29 =>
-            Ok(format!(
-                "{},0x{:012x},{}",
-                cursor.read_u8()?,
-                cursor.read_u48::<LittleEndian>()?,
-                cursor.read_u8()?,
-            )),
-        30 =>
-            Ok(format!(
-                "{},0x{:012x},{}",
-                cursor.read_u8()?,
-                cursor.read_u48::<LittleEndian>()?,
-                cursor.read_i8()?,
-            )),
-        31 =>
-            Ok(format!(
-                "{},0x{:012x},{}",
-                cursor.read_u8()?,
-                cursor.read_u48::<LittleEndian>()?,
-                cursor.read_i32::<LittleEndian>()?,
-            )),
-        32 =>
-            Ok(format!(
-                "0x{:08x},{},{}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
-            )),
-        33 =>
-            Ok(format!(
-                "0x{:08x},{},{}",
-                cursor.read_u32::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()?,
-                tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
-            )),
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000000.0
+            )?;
+        }
+        6 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            out.extend_from_slice(
+                tdf_field_read_string_to_str(cursor, cursor_start, 8, size)?.as_bytes(),
+            );
+        }
+        7 => {
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:04x}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "0x{:02x}", cursor.read_u8()?)?;
+        }
+        8 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()? as f64 / 100.0)?;
+        }
+        10 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        11 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        12 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        13 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        14 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        15 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        16 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        17 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        18 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        19 => {
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+        }
+        20 => {
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "0x{:02x}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "0x{:02x}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "0x{:02x}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 100000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_u32::<LittleEndian>()? as f64 / 100000.0
+            )?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
+            out.push(b',');
+            write!(out, "0x{:04x}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 100000.0
+            )?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()? as f64 / 100.0)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
+        }
+        21 => {
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i8()?)?;
+        }
+        22 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        23 => {
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+        }
+        24 => {
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+        }
+        25 => {
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            out.extend_from_slice(
+                tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
+            );
+        }
+        26 => {
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+        }
+        27 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        28 => {
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        29 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "0x{:012x}", cursor.read_u48::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        30 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "0x{:012x}", cursor.read_u48::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i8()?)?;
+        }
+        31 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "0x{:012x}", cursor.read_u48::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+        }
+        32 => {
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            out.extend_from_slice(
+                tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
+            );
+        }
+        33 => {
+            write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            out.extend_from_slice(
+                tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
+            );
+        }
         34 => {
             let item_count = tdf_variable_item_count(size, 16, 10)?;
             if item_count == 0 {
-                Ok(format!(
-                    "{},{},{},{},{},{},{},{},{},{},{},{}",
-                    cursor.read_u16::<LittleEndian>()?,
-                    cursor.read_u16::<LittleEndian>()?,
-                    cursor.read_u32::<LittleEndian>()?,
-                    cursor.read_u16::<LittleEndian>()?,
-                    cursor.read_u32::<LittleEndian>()?,
-                    cursor.read_u8()? as f64 / -1.0,
-                    cursor.read_i8()?,
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                ))
+                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_i8()?)?;
+                out.push(b',');
+                out.push(b',');
+                out.push(b',');
+                out.push(b',');
+                out.push(b',');
             } else {
-                let mut out = format!(
-                    "{},{},{},{},{},{},{},{},{},{},{},{}",
-                    cursor.read_u16::<LittleEndian>()?,
-                    cursor.read_u16::<LittleEndian>()?,
-                    cursor.read_u32::<LittleEndian>()?,
-                    cursor.read_u16::<LittleEndian>()?,
-                    cursor.read_u32::<LittleEndian>()?,
-                    cursor.read_u8()? as f64 / -1.0,
-                    cursor.read_i8()?,
-                    cursor.read_u32::<LittleEndian>()?,
-                    cursor.read_u16::<LittleEndian>()?,
-                    cursor.read_u16::<LittleEndian>()? as f64 / 1000.0,
-                    cursor.read_u8()? as f64 / -1.0,
-                    cursor.read_i8()?,
-                );
+                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_i8()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                out.push(b',');
+                write!(
+                    out,
+                    "{}",
+                    cursor.read_u16::<LittleEndian>()? as f64 / 1000.0
+                )?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
+                out.push(b',');
+                write!(out, "{}", cursor.read_i8()?)?;
                 for _ in 1..item_count {
-                    out.push_str(&format!(
-                        "\n,,,,,,,,{},{},{},{},{}",
-                        cursor.read_u32::<LittleEndian>()?,
-                        cursor.read_u16::<LittleEndian>()?,
-                        cursor.read_u16::<LittleEndian>()? as f64 / 1000.0,
-                        cursor.read_u8()? as f64 / -1.0,
-                        cursor.read_i8()?,
-                    ));
+                    out.extend_from_slice(b"\n,,,,,,,,");
+                    write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+                    out.push(b',');
+                    write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+                    out.push(b',');
+                    write!(
+                        out,
+                        "{}",
+                        cursor.read_u16::<LittleEndian>()? as f64 / 1000.0
+                    )?;
+                    out.push(b',');
+                    write!(out, "{}", cursor.read_u8()? as f64 / -1.0)?;
+                    out.push(b',');
+                    write!(out, "{}", cursor.read_i8()?)?;
                 }
-                Ok(out)
             }
-        },
-        35 =>
-            Ok(format!(
-                "0x{:012x},{},{}",
-                cursor.read_u48::<BigEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_i8()?,
-            )),
-        36 =>
-            Ok(format!(
+        }
+        35 => {
+            write!(out, "0x{:012x}", cursor.read_u48::<BigEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i8()?)?;
+        }
+        36 => {
+            write!(out, "{}", cursor.read_f32::<LittleEndian>()?)?;
+        }
+        37 => {
+            write!(
+                out,
                 "{}",
-                cursor.read_f32::<LittleEndian>()?,
-            )),
-        37 =>
-            Ok(format!(
-                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},0x{:02x},{}",
-                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-                cursor.read_i32::<LittleEndian>()? as f64 / 100000.0,
-                cursor.read_u32::<LittleEndian>()? as f64 / 100000.0,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
-                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
-                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
-                cursor.read_u16::<LittleEndian>()? as f64 / 100.0,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-            )),
-        38 =>
-            Ok(format!(
+                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                cursor.read_i32::<LittleEndian>()?,
-            )),
-        39 =>
-            Ok(format!(
-                "0x{:016x},{}",
-                cursor.read_u64::<LittleEndian>()?,
-                cursor.read_i8()?,
-            )),
-        40 =>
-            Ok(format!(
+                cursor.read_i32::<LittleEndian>()? as f64 / 10000000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                cursor.read_i8()?,
-            )),
-        41 =>
-            Ok(format!(
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        42 =>
-            Ok(format!(
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                cursor.read_i32::<LittleEndian>()?,
-            )),
-        43 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u32::<LittleEndian>()?,
-                tdf_field_read_string_to_str(cursor, cursor_start, 0, size)?,
-            )),
-        44 =>
-            Ok(format!(
-                "{},{},{}",
-                cursor.read_i8()?,
-                cursor.read_i16::<LittleEndian>()?,
-                tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
-            )),
-        45 =>
-            Ok(format!(
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
-            )),
-        46 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-            )),
-        47 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u32::<LittleEndian>()?,
-            )),
-        48 =>
-            Ok(format!(
-                "0x{:012x},{},{},{},{},{},{},{},{}",
-                cursor.read_u48::<BigEndian>()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-                cursor.read_i8()?,
-                cursor.read_u16::<LittleEndian>()?,
-                cursor.read_u8()?,
-            )),
-        49 =>
-            Ok(format!(
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                cursor.read_u8()?,
-            )),
-        50 =>
-            Ok(format!(
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
                 "{}",
-                cursor.read_u8()?,
-            )),
-        51 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u8()?,
-                cursor.read_u8()?,
-            )),
+                cursor.read_i32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_i32::<LittleEndian>()? as f64 / 100000.0
+            )?;
+            out.push(b',');
+            write!(
+                out,
+                "{}",
+                cursor.read_u32::<LittleEndian>()? as f64 / 100000.0
+            )?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()? as f64 / 100.0)?;
+            out.push(b',');
+            write!(out, "0x{:02x}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        38 => {
+            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+        }
+        39 => {
+            write!(out, "0x{:016x}", cursor.read_u64::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i8()?)?;
+        }
+        40 => {
+            write!(out, "{}", cursor.read_i8()?)?;
+        }
+        41 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        42 => {
+            write!(out, "{}", cursor.read_i32::<LittleEndian>()?)?;
+        }
+        43 => {
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+            out.push(b',');
+            out.extend_from_slice(
+                tdf_field_read_string_to_str(cursor, cursor_start, 0, size)?.as_bytes(),
+            );
+        }
+        44 => {
+            write!(out, "{}", cursor.read_i8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            out.extend_from_slice(
+                tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
+            );
+        }
+        45 => {
+            out.extend_from_slice(
+                tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
+            );
+        }
+        46 => {
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+        }
+        47 => {
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+        }
+        48 => {
+            write!(out, "0x{:012x}", cursor.read_u48::<BigEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        49 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        50 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        51 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
         52 => {
             let item_count = tdf_variable_item_count(size, 0, 4)?;
             if item_count == 0 {
-                Ok(format!(
-                    "{}",
-                    "",
-                ))
             } else {
-                let mut out = format!(
-                    "0x{:08x}",
-                    cursor.read_u32::<LittleEndian>()?,
-                );
+                write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
                 for _ in 1..item_count {
-                    out.push_str(&format!(
-                        "\n,0x{:08x}",
-                        cursor.read_u32::<LittleEndian>()?,
-                    ));
+                    out.extend_from_slice(b"\n,");
+                    write!(out, "0x{:08x}", cursor.read_u32::<LittleEndian>()?)?;
                 }
-                Ok(out)
             }
-        },
-        53 =>
-            Ok(format!(
+        }
+        53 => {
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+        }
+        54 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        55 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        56 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+        }
+        57 => {
+            write!(out, "{}", cursor.read_u8()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_u32::<LittleEndian>()?)?;
+        }
+        58 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        59 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        60 => {
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+            out.push(b',');
+            write!(out, "{}", cursor.read_i16::<LittleEndian>()?)?;
+        }
+        61 => {
+            write!(out, "{}", cursor.read_u16::<LittleEndian>()?)?;
+            out.push(b',');
+            out.extend_from_slice(
+                tdf_field_read_vla_to_str(cursor, cursor_start, size)?.as_bytes(),
+            );
+        }
+        62 => {
+            write!(
+                out,
                 "{}",
-                cursor.read_u16::<LittleEndian>()?,
-            )),
-        54 =>
-            Ok(format!(
-                "{}",
-                cursor.read_u8()?,
-            )),
-        55 =>
-            Ok(format!(
-                "{}",
-                cursor.read_u8()?,
-            )),
-        56 =>
-            Ok(format!(
-                "{}",
-                cursor.read_u8()?,
-            )),
-        57 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u8()?,
-                cursor.read_u32::<LittleEndian>()?,
-            )),
-        58 =>
-            Ok(format!(
-                "{}",
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        59 =>
-            Ok(format!(
-                "{}",
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        60 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_i16::<LittleEndian>()?,
-                cursor.read_i16::<LittleEndian>()?,
-            )),
-        61 =>
-            Ok(format!(
-                "{},{}",
-                cursor.read_u16::<LittleEndian>()?,
-                tdf_field_read_vla_to_str(cursor, cursor_start, size)?,
-            )),
-        62 =>
-            Ok(format!(
-                "{}",
-                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0,
-            )),
+                cursor.read_u32::<LittleEndian>()? as f64 / 1000.0
+            )?;
+        }
         _ => {
             let mut buf = vec![0; size as usize];
             cursor.read_exact(&mut buf)?;
-            Ok(format!("{}", hex::encode(buf)))
+            out.extend_from_slice(hex::encode(buf).as_bytes());
         }
     };
     let cursor_end = cursor.position();
@@ -807,7 +1025,14 @@ pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> 
     if underflow > 0 {
         crate::decoders::tdf_field_read_string(cursor, cursor_start, 0, underflow as u8)?;
     }
-    res
+    Ok(())
+}
+
+/// Decode a TDF into a CSV formatted string
+pub fn tdf_read_into_str(tdf_id: &u16, size: u8, cursor: &mut Cursor<&[u8]>) -> Result<String> {
+    let mut out = Vec::new();
+    tdf_write_csv(tdf_id, size, cursor, &mut out)?;
+    String::from_utf8(out).map_err(|e| Error::new(ErrorKind::InvalidData, e))
 }
 
 #[cfg(test)]
