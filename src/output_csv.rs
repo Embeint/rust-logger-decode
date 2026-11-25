@@ -1,7 +1,6 @@
 use chrono::SecondsFormat;
 use itertools::Itertools;
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::fs::{self, File};
 use std::io::Cursor;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
@@ -12,8 +11,7 @@ use std::thread;
 use tdf::TdfOutput;
 
 use crate::output_common::{
-    OutputKey, increment_output_count, merged_output_path, rename_first_file_if_splitting,
-    touch_output_count, worker_output_path, written,
+    OutputKey, merged_output_path, rename_first_file_if_splitting, worker_output_path,
 };
 use crate::{ProgressReporter, RunArgs, TdfDecoderOutputs};
 
@@ -25,13 +23,25 @@ pub struct TdfCsvWriter {
     output_folder: std::path::PathBuf,
     output_prefix: String,
     output_unix: bool,
-    pub outputs:
-        HashMap<(Option<u64>, u16), (std::path::PathBuf, std::io::BufWriter<std::fs::File>)>,
-    output_cnt: HashMap<OutputKey, usize>,
+    /// Output files, in the order they were created
+    outputs: Vec<CsvWorkerOutput>,
+    /// Index into `outputs` for each key
+    output_idx: HashMap<OutputKey, usize>,
+    /// Most recently written output, consecutive samples usually share it
+    last_output: Option<(OutputKey, usize)>,
     /// Reused buffers for constructing CSV lines
     time: Vec<u8>,
     reading: Vec<u8>,
     rfc3339: Rfc3339Formatter,
+}
+
+/// A single worker output file
+struct CsvWorkerOutput {
+    key: OutputKey,
+    path: PathBuf,
+    writer: BufWriter<File>,
+    /// Number of readings written
+    count: usize,
 }
 
 fn push_int<I: itoa::Integer>(out: &mut Vec<u8>, val: I) {
@@ -100,20 +110,63 @@ impl TdfCsvWriter {
             output_folder: output_folder,
             output_prefix,
             output_unix: output_unix_time,
-            outputs: HashMap::new(),
-            output_cnt: HashMap::new(),
+            outputs: Vec::new(),
+            output_idx: HashMap::new(),
+            last_output: None,
             time: Vec::with_capacity(64),
             reading: Vec::with_capacity(256),
             rfc3339: Rfc3339Formatter::default(),
         }
     }
+
+    /// Index of the output for `key`, creating the output if it doesn't exist
+    fn output_index(&mut self, key: OutputKey) -> io::Result<usize> {
+        // Fast path, avoids hashing for consecutive samples of the same TDF
+        if let Some((last_key, idx)) = self.last_output {
+            if last_key == key {
+                return Ok(idx);
+            }
+        }
+
+        let idx = match self.output_idx.get(&key) {
+            Some(&idx) => idx,
+            None => {
+                let (remote_id, tdf_id) = key;
+                let path = worker_output_path(
+                    &self.output_folder,
+                    &self.output_prefix,
+                    remote_id,
+                    tdf_id,
+                    self.decoder_idx,
+                    "csv",
+                );
+                let mut writer = BufWriter::new(File::create(path.clone())?);
+
+                // Write header into file
+                let heading = tdf::decoders_csv::tdf_fields(&tdf_id).join(",");
+                writer.write_all(format!("time,{}\n", heading).as_bytes())?;
+
+                // Output is tracked (with a zero count) even if decoding fails
+                self.outputs.push(CsvWorkerOutput {
+                    key,
+                    path,
+                    writer,
+                    count: 0,
+                });
+                self.output_idx.insert(key, self.outputs.len() - 1);
+                self.outputs.len() - 1
+            }
+        };
+        self.last_output = Some((key, idx));
+        Ok(idx)
+    }
 }
 
 impl TdfOutput for TdfCsvWriter {
     fn output_path(self: &Self, remote_id: Option<u64>, tdf_id: u16) -> Option<PathBuf> {
-        self.outputs
+        self.output_idx
             .get(&(remote_id, tdf_id))
-            .map(|(pathbuf, _)| pathbuf.clone())
+            .map(|&idx| self.outputs[idx].path.clone())
     }
 
     fn write(
@@ -126,30 +179,7 @@ impl TdfOutput for TdfCsvWriter {
         cursor: &mut Cursor<&[u8]>,
     ) -> std::io::Result<()> {
         // Create writer if it doesn't exist
-        let (_, writer) = match self.outputs.entry((remote_id, tdf_id)) {
-            Entry::Occupied(o) => o.into_mut(),
-            Entry::Vacant(v) => {
-                let path = worker_output_path(
-                    &self.output_folder,
-                    &self.output_prefix,
-                    remote_id,
-                    tdf_id,
-                    self.decoder_idx,
-                    "csv",
-                );
-                let mut writer = std::io::BufWriter::new(std::fs::File::create(path.clone())?);
-
-                // Write header into file
-                let heading = tdf::decoders_csv::tdf_fields(&tdf_id).join(",");
-                writer.write_all(format!("time,{}\n", heading).as_bytes())?;
-
-                // Touch the count variable in case the decoding fails
-                touch_output_count(&mut self.output_cnt, (remote_id, tdf_id));
-
-                // Insert into hashmap and return
-                v.insert((path, writer))
-            }
-        };
+        let output_idx = self.output_index((remote_id, tdf_id))?;
 
         // Decode the reading into the reused row buffer
         let reading = &mut self.reading;
@@ -177,20 +207,25 @@ impl TdfOutput for TdfCsvWriter {
         time.push(b',');
 
         // Write line to output
-        writer.write_all(time)?;
-        writer.write_all(reading)?;
+        let output = &mut self.outputs[output_idx];
+        output.writer.write_all(time)?;
+        output.writer.write_all(reading)?;
 
         // Increment output counter
-        increment_output_count(&mut self.output_cnt, (remote_id, tdf_id));
+        output.count += 1;
         Ok(())
     }
 
     fn iter_written(&self) -> impl Iterator<Item = (&(Option<u64>, u16), &usize)> {
-        self.output_cnt.iter()
+        self.outputs
+            .iter()
+            .map(|output| (&output.key, &output.count))
     }
 
     fn written(&self, remote_id: Option<u64>, tdf_id: u16) -> usize {
-        written(&self.output_cnt, (remote_id, tdf_id))
+        self.output_idx
+            .get(&(remote_id, tdf_id))
+            .map_or(0, |&idx| self.outputs[idx].count)
     }
 }
 
