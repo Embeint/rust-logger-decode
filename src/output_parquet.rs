@@ -384,8 +384,7 @@ impl MergedParquetFile {
         self.flush_pending()?;
 
         let rg = metadata.row_group(rg_idx);
-        let column_indexes = metadata.column_index().and_then(|ci| ci.get(rg_idx));
-        let offset_indexes = metadata.offset_index().and_then(|oi| oi.get(rg_idx));
+        let page_index = metadata.page_index_for_row_group(rg_idx);
 
         let mut row_group = self.writer.next_row_group().map_err(to_io_error)?;
         for (col_idx, column) in rg.columns().iter().enumerate() {
@@ -394,8 +393,8 @@ impl MergedParquetFile {
                 rows_written: rg.num_rows() as u64,
                 metadata: column.clone(),
                 bloom_filter: None,
-                column_index: column_indexes.and_then(|row| row.get(col_idx)).cloned(),
-                offset_index: offset_indexes.and_then(|row| row.get(col_idx)).cloned(),
+                column_index: page_index.column_index(col_idx).cloned(),
+                offset_index: page_index.offset_index(col_idx).cloned(),
             };
             row_group.append_column(input, close).map_err(to_io_error)?;
         }
