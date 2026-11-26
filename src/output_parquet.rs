@@ -11,7 +11,11 @@ use arrow_schema::SchemaRef;
 use itertools::Itertools;
 use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::arrow::arrow_writer::{ArrowColumnWriter, ArrowRowGroupWriterFactory, compute_leaves};
+use parquet::column::writer::ColumnCloseResult;
+use parquet::file::metadata::{PageIndexPolicy, ParquetMetaData, ParquetMetaDataReader};
 use parquet::file::properties::WriterProperties;
+use parquet::file::writer::SerializedFileWriter;
 use parquet::schema::types::ColumnPath;
 use tdf::TdfOutput;
 use tdf::decoders_parquet::{TdfParquetBatchBuilder, TdfParquetRowMeta};
@@ -22,6 +26,14 @@ use crate::output_common::{
 use crate::{ProgressReporter, RunArgs, TdfDecoderOutputs};
 
 const DEFAULT_BATCH_ROWS: usize = 65536;
+
+/// Maximum number of rows in a row group encoded while merging
+/// (matches the `ArrowWriter` default)
+const MERGE_ROW_GROUP_ROWS: usize = 1024 * 1024;
+
+/// Row groups at least this large are copied without re-encoding while merging.
+/// Smaller row groups are re-encoded so they can be combined.
+const MERGE_COPY_MIN_ROWS: usize = DEFAULT_BATCH_ROWS;
 
 /// Properties for all Parquet files written
 fn writer_properties() -> WriterProperties {
@@ -277,14 +289,137 @@ impl TdfOutput for TdfParquetWriter {
     }
 }
 
+/// A merged Parquet output file, built from a mix of row groups copied
+/// unchanged from worker files and row groups encoded from record batches.
+struct MergedParquetFile {
+    writer: SerializedFileWriter<File>,
+    factory: ArrowRowGroupWriterFactory,
+    schema: SchemaRef,
+    /// Column writers for the row group currently being encoded
+    pending: Option<Vec<ArrowColumnWriter>>,
+    pending_rows: usize,
+    num_row_groups: usize,
+}
+
+impl MergedParquetFile {
+    fn new(path: &PathBuf, schema: SchemaRef) -> io::Result<Self> {
+        let file = File::create(path)?;
+        // Construct through `ArrowWriter` so the file has the same schema,
+        // properties and embedded Arrow schema as the worker files.
+        let (writer, factory) =
+            ArrowWriter::try_new(file, schema.clone(), Some(writer_properties()))
+                .and_then(|w| w.into_serialized_writer())
+                .map_err(to_io_error)?;
+
+        Ok(Self {
+            writer,
+            factory,
+            schema,
+            pending: None,
+            pending_rows: 0,
+            num_row_groups: 0,
+        })
+    }
+
+    /// Encode a record batch, starting a new row group as required
+    fn write_batch(&mut self, batch: &RecordBatch) -> io::Result<()> {
+        let mut offset = 0;
+        while offset < batch.num_rows() {
+            let rows = (MERGE_ROW_GROUP_ROWS - self.pending_rows).min(batch.num_rows() - offset);
+            let slice = batch.slice(offset, rows);
+
+            if self.pending.is_none() {
+                self.pending = Some(
+                    self.factory
+                        .create_column_writers(self.num_row_groups)
+                        .map_err(to_io_error)?,
+                );
+            }
+            let writers = self.pending.as_mut().unwrap();
+            let mut writer_iter = writers.iter_mut();
+            for (field, column) in self.schema.fields().iter().zip(slice.columns()) {
+                for leaf in compute_leaves(field, column).map_err(to_io_error)? {
+                    writer_iter
+                        .next()
+                        .expect("Column writer per leaf")
+                        .write(&leaf)
+                        .map_err(to_io_error)?;
+                }
+            }
+
+            self.pending_rows += rows;
+            offset += rows;
+            if self.pending_rows >= MERGE_ROW_GROUP_ROWS {
+                self.flush_pending()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Write out the row group currently being encoded
+    fn flush_pending(&mut self) -> io::Result<()> {
+        if let Some(writers) = self.pending.take() {
+            let mut row_group = self.writer.next_row_group().map_err(to_io_error)?;
+            for writer in writers {
+                writer
+                    .close()
+                    .and_then(|chunk| chunk.append_to_row_group(&mut row_group))
+                    .map_err(to_io_error)?;
+            }
+            row_group.close().map_err(to_io_error)?;
+            self.num_row_groups += 1;
+            self.pending_rows = 0;
+        }
+        Ok(())
+    }
+
+    /// Copy a row group from another file without decoding it
+    fn copy_row_group(
+        &mut self,
+        input: &File,
+        metadata: &ParquetMetaData,
+        rg_idx: usize,
+    ) -> io::Result<()> {
+        // Preserve row order with respect to any buffered rows
+        self.flush_pending()?;
+
+        let rg = metadata.row_group(rg_idx);
+        let column_indexes = metadata.column_index().and_then(|ci| ci.get(rg_idx));
+        let offset_indexes = metadata.offset_index().and_then(|oi| oi.get(rg_idx));
+
+        let mut row_group = self.writer.next_row_group().map_err(to_io_error)?;
+        for (col_idx, column) in rg.columns().iter().enumerate() {
+            let close = ColumnCloseResult {
+                bytes_written: column.compressed_size() as u64,
+                rows_written: rg.num_rows() as u64,
+                metadata: column.clone(),
+                bloom_filter: None,
+                column_index: column_indexes.and_then(|row| row.get(col_idx)).cloned(),
+                offset_index: offset_indexes.and_then(|row| row.get(col_idx)).cloned(),
+            };
+            row_group.append_column(input, close).map_err(to_io_error)?;
+        }
+        row_group.close().map_err(to_io_error)?;
+        self.num_row_groups += 1;
+        Ok(())
+    }
+
+    fn close(mut self) -> io::Result<()> {
+        self.flush_pending()?;
+        self.writer.close().map_err(to_io_error)?;
+        Ok(())
+    }
+}
+
 struct TdfParquetMergedOutput {
     output_folder: PathBuf,
     output_prefix: String,
     remote_id: Option<u64>,
     tdf_id: u16,
+    schema: SchemaRef,
     threshold_rows: Option<usize>,
     output_files: Vec<PathBuf>,
-    writer: Option<ArrowWriter<File>>,
+    writer: Option<MergedParquetFile>,
     rows_in_file: usize,
     part_idx: usize,
 }
@@ -296,12 +431,16 @@ impl TdfParquetMergedOutput {
         remote_id: Option<u64>,
         tdf_id: u16,
         threshold_rows: usize,
-    ) -> Self {
-        Self {
+    ) -> io::Result<Self> {
+        let schema = tdf::decoders_parquet::tdf_parquet_schema(tdf_id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Unknown TDF ID"))?;
+
+        Ok(Self {
             output_folder,
             output_prefix,
             remote_id,
             tdf_id,
+            schema,
             threshold_rows: match threshold_rows {
                 0 => None,
                 value => Some(value),
@@ -310,35 +449,78 @@ impl TdfParquetMergedOutput {
             writer: None,
             rows_in_file: 0,
             part_idx: 0,
+        })
+    }
+
+    /// Start a new output file if none is open or the current one is full
+    fn ensure_writer(&mut self) -> io::Result<()> {
+        if self.writer.is_none()
+            || self
+                .threshold_rows
+                .is_some_and(|threshold| self.rows_in_file >= threshold)
+        {
+            self.start_next_file()?;
         }
+        Ok(())
+    }
+
+    /// Rows that can still be written to the current output file
+    fn rows_remaining(&self) -> usize {
+        self.threshold_rows
+            .map_or(usize::MAX, |threshold| threshold - self.rows_in_file)
+    }
+
+    /// Append all rows of a worker output file
+    fn append_file(&mut self, path: &PathBuf) -> io::Result<()> {
+        let file = File::open(path)?;
+        let metadata = ParquetMetaDataReader::new()
+            .with_page_index_policy(PageIndexPolicy::Optional)
+            .parse_and_finish(&file)
+            .map_err(to_io_error)?;
+
+        for rg_idx in 0..metadata.num_row_groups() {
+            let rows = metadata.row_group(rg_idx).num_rows() as usize;
+            if rows == 0 {
+                continue;
+            }
+
+            self.ensure_writer()?;
+            if rows >= MERGE_COPY_MIN_ROWS && rows <= self.rows_remaining() {
+                // Large row group that fits in the current file, copy it unchanged
+                self.writer
+                    .as_mut()
+                    .expect("Parquet writer should be open")
+                    .copy_row_group(&file, &metadata, rg_idx)?;
+                self.rows_in_file += rows;
+            } else {
+                // Small, or needs splitting across files, re-encode it
+                let reader = ParquetRecordBatchReaderBuilder::try_new(file.try_clone()?)
+                    .map_err(to_io_error)?
+                    .with_row_groups(vec![rg_idx])
+                    .with_batch_size(DEFAULT_BATCH_ROWS)
+                    .build()
+                    .map_err(to_io_error)?;
+                for batch in reader {
+                    self.append_batch(&batch.map_err(to_io_error)?)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn append_batch(&mut self, batch: &RecordBatch) -> io::Result<()> {
         let mut offset = 0;
 
         while offset < batch.num_rows() {
-            if self.writer.is_none()
-                || self
-                    .threshold_rows
-                    .is_some_and(|threshold| self.rows_in_file >= threshold)
-            {
-                self.start_next_file(batch.schema())?;
-            }
+            self.ensure_writer()?;
 
-            let rows_to_write = match self.threshold_rows {
-                Some(threshold) => {
-                    let rows_remaining = threshold - self.rows_in_file;
-                    rows_remaining.min(batch.num_rows() - offset)
-                }
-                None => batch.num_rows() - offset,
-            };
+            let rows_to_write = self.rows_remaining().min(batch.num_rows() - offset);
             let batch = batch.slice(offset, rows_to_write);
 
             self.writer
                 .as_mut()
                 .expect("Parquet writer should be open")
-                .write(&batch)
-                .map_err(to_io_error)?;
+                .write_batch(&batch)?;
 
             self.rows_in_file += rows_to_write;
             offset += rows_to_write;
@@ -352,14 +534,12 @@ impl TdfParquetMergedOutput {
         Ok(std::mem::take(&mut self.output_files))
     }
 
-    fn start_next_file(&mut self, schema: SchemaRef) -> io::Result<()> {
+    fn start_next_file(&mut self) -> io::Result<()> {
         self.finish_current_file()?;
         self.rename_first_file_if_splitting()?;
 
         let path = self.output_path();
-        let file = File::create(path.clone())?;
-        let writer =
-            ArrowWriter::try_new(file, schema, Some(writer_properties())).map_err(to_io_error)?;
+        let writer = MergedParquetFile::new(&path, self.schema.clone())?;
 
         self.output_files.push(path);
         self.writer = Some(writer);
@@ -382,8 +562,8 @@ impl TdfParquetMergedOutput {
     }
 
     fn finish_current_file(&mut self) -> io::Result<()> {
-        if let Some(mut writer) = self.writer.take() {
-            writer.finish().map_err(to_io_error)?;
+        if let Some(writer) = self.writer.take() {
+            writer.close()?;
         }
         Ok(())
     }
@@ -427,17 +607,7 @@ fn merge_output<T: ProgressReporter>(
 ) -> io::Result<Vec<PathBuf>> {
     for worker in worker_outputs.keys().sorted() {
         let input_path = worker_outputs[worker].output.clone();
-        let file = File::open(&input_path)?;
-        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-            .map_err(to_io_error)?
-            .with_batch_size(DEFAULT_BATCH_ROWS)
-            .build()
-            .map_err(to_io_error)?;
-
-        for batch in reader {
-            output.append_batch(&batch.map_err(to_io_error)?)?;
-        }
-
+        output.append_file(&input_path)?;
         std::fs::remove_file(input_path)?;
         reporter.increment(1);
     }
@@ -486,7 +656,7 @@ pub fn merge_with_threshold<T: ProgressReporter + Clone + Send>(
                             *remote_id,
                             *tdf_id,
                             threshold_rows,
-                        );
+                        )?;
                         let files = merge_output(output, worker_outputs, &mut reporter)?;
                         done.push((job_idx, files));
                     }
@@ -514,4 +684,120 @@ pub fn merge_with_threshold<T: ProgressReporter + Clone + Send>(
 
 fn to_io_error<E: std::error::Error + Send + Sync + 'static>(err: E) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow_select::concat::concat_batches;
+
+    struct NoProgress;
+    impl ProgressReporter for NoProgress {
+        fn start(&mut self, _msg: &'static str, _total: usize) {}
+        fn increment(&mut self, _value: usize) {}
+        fn stop(&mut self) {}
+    }
+
+    const TDF_ID: u16 = 10;
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("infuse_decoder_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Create one worker output file per entry in `rows`, each a single row group
+    fn create_worker_files(dir: &PathBuf, rows: &[usize]) -> HashMap<usize, TdfDecoderOutputs> {
+        let mut sample = 0u32;
+        let mut outputs = HashMap::new();
+        for (worker, &num) in rows.iter().enumerate() {
+            let mut writer = TdfParquetWriter::new(worker, dir.clone(), "test".to_string());
+            for _ in 0..num {
+                let mut data = Vec::new();
+                for axis in 0..3u32 {
+                    data.extend_from_slice(&((sample * 3 + axis) as i16).to_le_bytes());
+                }
+                let time = 1_400_000_000i64 << 16 | (sample & 0xFFFF) as i64;
+                writer
+                    .write(None, TDF_ID, time, None, 6, &mut Cursor::new(&data[..]))
+                    .unwrap();
+                sample += 1;
+            }
+            writer.finish().unwrap();
+            outputs.insert(
+                worker,
+                TdfDecoderOutputs {
+                    output: writer.output_path(None, TDF_ID).unwrap(),
+                    num_output: num,
+                },
+            );
+        }
+        outputs
+    }
+
+    fn read_file(path: &PathBuf) -> (RecordBatch, Vec<usize>) {
+        let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(path).unwrap()).unwrap();
+        let row_groups = builder
+            .metadata()
+            .row_groups()
+            .iter()
+            .map(|rg| rg.num_rows() as usize)
+            .collect();
+        let schema = builder.schema().clone();
+        let batches: Vec<_> = builder.build().unwrap().map(|b| b.unwrap()).collect();
+        (concat_batches(&schema, &batches).unwrap(), row_groups)
+    }
+
+    /// Merge worker files with the given threshold, returning the decoded
+    /// worker data and each merged file's data and row group sizes
+    fn merge(
+        name: &str,
+        rows: &[usize],
+        threshold: usize,
+    ) -> (RecordBatch, Vec<(RecordBatch, Vec<usize>)>) {
+        let dir = unique_temp_dir(name);
+        let workers = create_worker_files(&dir, rows);
+        let input: Vec<_> = workers
+            .keys()
+            .sorted()
+            .map(|w| read_file(&workers[w].output).0)
+            .collect();
+        let input = concat_batches(&input[0].schema(), &input).unwrap();
+
+        let output =
+            TdfParquetMergedOutput::new(dir.clone(), "out".into(), None, TDF_ID, threshold)
+                .unwrap();
+        let files = merge_output(output, &workers, &mut NoProgress).unwrap();
+        let merged = files.iter().map(read_file).collect();
+
+        std::fs::remove_dir_all(dir).unwrap();
+        (input, merged)
+    }
+
+    #[test]
+    fn merge_copies_large_row_groups_and_combines_small_ones() {
+        let (input, merged) = merge("pq_merge_copy", &[100_000, 1_000, 2_000, 100_000], 0);
+
+        assert_eq!(merged.len(), 1);
+        let (data, row_groups) = &merged[0];
+        assert_eq!(data, &input);
+        // Large row groups are copied as is, small ones combined
+        assert_eq!(row_groups, &vec![100_000, 3_000, 100_000]);
+    }
+
+    #[test]
+    fn merge_splits_row_groups_at_reading_limit() {
+        let (input, merged) = merge("pq_merge_split", &[100_000, 1_000, 100_000], 150_000);
+
+        let rows: Vec<usize> = merged.iter().map(|(data, _)| data.num_rows()).collect();
+        assert_eq!(rows, vec![150_000, 51_000]);
+        // First row group fits and is copied, the last is split across files
+        assert_eq!(merged[0].1, vec![100_000, 50_000]);
+        assert_eq!(merged[1].1, vec![51_000]);
+
+        let parts: Vec<RecordBatch> = merged.into_iter().map(|(data, _)| data).collect();
+        assert_eq!(concat_batches(&input.schema(), &parts).unwrap(), input);
+    }
 }
