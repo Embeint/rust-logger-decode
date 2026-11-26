@@ -127,6 +127,7 @@ struct MyApp {
 struct DocCapture {
     markers: Vec<DocMarker>,
     screenshot_requested: bool,
+    screenshot: Arc<Mutex<Option<Arc<egui::ColorImage>>>>,
     output_path: PathBuf,
 }
 
@@ -140,6 +141,7 @@ impl DocCapture {
         Self {
             markers: Vec::new(),
             screenshot_requested: false,
+            screenshot: Arc::new(Mutex::new(None)),
             output_path: PathBuf::from("assets/configuration_options.png"),
         }
     }
@@ -232,15 +234,7 @@ impl MyApp {
             return;
         };
 
-        let mut screenshot = None;
-        ctx.input(|input| {
-            for event in &input.events {
-                if let egui::Event::Screenshot { image, .. } = event {
-                    screenshot = Some(Arc::clone(image));
-                }
-            }
-        });
-
+        let screenshot = doc_capture.screenshot.lock().unwrap().take();
         if let Some(image) = screenshot {
             if let Err(err) = save_color_image(&doc_capture.output_path, &image) {
                 eprintln!(
@@ -254,7 +248,7 @@ impl MyApp {
 
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
-            egui::Id::new("doc_markers"),
+            egui::Id::unique("doc_markers"),
         ));
 
         for marker in &doc_capture.markers {
@@ -263,7 +257,12 @@ impl MyApp {
 
         if !doc_capture.screenshot_requested {
             doc_capture.screenshot_requested = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            let slot = Arc::clone(&doc_capture.screenshot);
+            let repaint_ctx = ctx.clone();
+            ctx.request_screenshot(move |image| {
+                *slot.lock().unwrap() = Some(image);
+                repaint_ctx.request_repaint();
+            });
             ctx.request_repaint();
         }
     }
@@ -764,7 +763,7 @@ fn draw_tdf_table(ui: &mut egui::Ui, id: Option<u64>, tdfs: &HashMap<u16, usize>
 }
 
 fn gui_stats(app: &mut MyApp, ui: &mut egui::Ui) {
-    egui::CentralPanel::default().show_inside(ui, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
         ui.columns_const(|[col_blocks, col_tdfs, col_files]| {
             col_blocks.push_id(0, |ui| {
                 draw_right_edge(ui, 1.0, egui::Color32::GRAY);
@@ -895,7 +894,7 @@ impl eframe::App for MyApp {
             println!();
         }
 
-        egui::Panel::top("top_panel").show_inside(ui, |ui| {
+        egui::Panel::top("top_panel").show(ui, |ui| {
             ui.horizontal(|ui| {
                 if self.is_doc_capture() {
                     ui.add_space(DOC_MARKER_GUTTER);
@@ -907,11 +906,11 @@ impl eframe::App for MyApp {
             decode_options(self, ui);
         });
 
-        egui::Panel::bottom("bottom_panel").show_inside(ui, |ui| {
+        egui::Panel::bottom("bottom_panel").show(ui, |ui| {
             copyright_bar(ui);
         });
 
-        egui::Panel::top("progress_panel").show_inside(ui, |ui| {
+        egui::Panel::top("progress_panel").show(ui, |ui| {
             ui.add_space(5.0);
             egui::Grid::new("progress_bars")
                 .num_columns(2)
