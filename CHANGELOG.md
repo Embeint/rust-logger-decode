@@ -13,6 +13,9 @@ This project adheres to [Semantic Versioning](https://semver.org).
  - CSV decoding is approximately 4x faster, with identical output
     - Merging output files is no longer a bottleneck, so skipping the merge step saves less time
     - Larger improvement on machines with fewer CPU cores
+ - Parquet decoding is approximately 3-4x faster, with identical data
+    - Output files are approximately 5% smaller
+    - Merging output files is now almost as fast as skipping the merge step
 
 ## [1.11.0] - 2026-06-30
 
